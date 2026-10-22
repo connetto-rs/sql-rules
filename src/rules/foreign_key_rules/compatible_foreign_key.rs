@@ -39,6 +39,40 @@ use crate::{
 /// .unwrap();
 /// assert!(constrainer.validate_schema(&invalid_data_type).is_err());
 ///
+/// let both_generated = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE parent (id SERIAL PRIMARY KEY);
+/// CREATE TABLE child (id SERIAL PRIMARY KEY, FOREIGN KEY (id) REFERENCES parent (id));
+/// ",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&both_generated).unwrap_err().to_string();
+/// assert!(error.contains("`child.id` and referenced column `parent.id` are both generative"));
+///
+/// // `d.x` references `a`, while the unique `b.code` references nothing
+/// let host_in_other_hierarchy = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE a (id INT PRIMARY KEY);
+/// CREATE TABLE b (id INT PRIMARY KEY, code INT UNIQUE);
+/// CREATE TABLE d (id INT PRIMARY KEY, x INT REFERENCES a (id), FOREIGN KEY (x) REFERENCES b (code));
+/// ",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&host_in_other_hierarchy).unwrap_err().to_string();
+/// assert!(error.contains("`d.x` references [a], while `b.code` references [none]"));
+///
+/// // `d.b_a_id` references nothing, while the unique `b.a_id` references `a`
+/// let referenced_in_other_hierarchy = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE a (id INT PRIMARY KEY);
+/// CREATE TABLE b (id INT PRIMARY KEY, a_id INT UNIQUE REFERENCES a (id));
+/// CREATE TABLE d (id INT PRIMARY KEY, b_a_id INT REFERENCES b (a_id));
+/// ",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&referenced_in_other_hierarchy).unwrap_err().to_string();
+/// assert!(error.contains("`d.b_a_id` references [none], while `b.a_id` references [a]"));
+///
 /// let extension_dag = ParserDB::parse::<GenericDialect>(
 ///     "
 /// CREATE TABLE root (id SERIAL PRIMARY KEY);

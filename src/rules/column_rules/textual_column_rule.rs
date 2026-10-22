@@ -33,6 +33,23 @@ use sql_traits::traits::{CheckConstraintLike, ColumnLike, DatabaseLike, TableLik
 /// // Valid: Textual column with both constraints
 /// let valid_schema = ParserDB::parse::<GenericDialect>("CREATE TABLE users (name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 255));").unwrap();
 /// assert!(constrainer.validate_schema(&valid_schema).is_ok());
+///
+/// // Invalid: an indexed textual column longer than 255 characters
+/// let indexed_too_long = ParserDB::parse::<GenericDialect>(
+///     "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 1000));
+///      CREATE INDEX users_name ON users (name);",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&indexed_too_long).unwrap_err().to_string();
+/// assert!(error.contains("'users.name' appears in an index but has length limit"));
+///
+/// // Valid: the tightest of several length checks decides the limit
+/// let indexed_tightest = ParserDB::parse::<GenericDialect>(
+///     "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 300), CHECK (LENGTH(name) <= 200));
+///      CREATE INDEX users_name ON users (name);",
+/// )
+/// .unwrap();
+/// assert!(constrainer.validate_schema(&indexed_tightest).is_ok());
 /// ```
 pub struct TextualColumnRule<DB>(std::marker::PhantomData<DB>);
 

@@ -63,6 +63,17 @@ use crate::{
 /// )
 /// .unwrap();
 /// assert!(constrainer.validate_schema(&valid_schema_non_pk).is_ok());
+///
+/// // `parent.owner_id` references a primary key, but `child` references `parent.code`
+/// let valid_schema_other_fk = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE owner (id INT PRIMARY KEY);
+/// CREATE TABLE parent (id INT PRIMARY KEY, code INT UNIQUE, owner_id INT REFERENCES owner (id));
+/// CREATE TABLE child (parent_code INT, FOREIGN KEY (parent_code) REFERENCES parent (code));
+/// ",
+/// )
+/// .unwrap();
+/// assert!(constrainer.validate_schema(&valid_schema_other_fk).is_ok());
 /// ```
 pub struct PrimaryKeyReferenceEndsWithId<C>(std::marker::PhantomData<C>);
 

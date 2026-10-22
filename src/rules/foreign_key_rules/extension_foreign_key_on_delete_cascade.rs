@@ -42,6 +42,20 @@ use crate::{
 /// .unwrap();
 /// assert!(constrainer.validate_schema(&invalid_schema).is_err());
 ///
+/// // A named extension FK is reported by its name
+/// let invalid_named = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE parent_table (id INT PRIMARY KEY);
+/// CREATE TABLE extension_table (
+///     id INT PRIMARY KEY,
+///     CONSTRAINT extension_parent FOREIGN KEY (id) REFERENCES parent_table(id)
+/// );
+/// ",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&invalid_named).unwrap_err().to_string();
+/// assert!(error.contains("Extension foreign key 'extension_parent' in table 'extension_table'"));
+///
 /// // Extension FK with ON DELETE CASCADE - should pass
 /// let valid_schema = ParserDB::parse::<GenericDialect>(
 ///     "
