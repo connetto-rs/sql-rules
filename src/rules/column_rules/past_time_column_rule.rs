@@ -70,7 +70,7 @@ impl<DB: DatabaseLike> ColumnRule for PastTimeColumnRule<DB> {
             return Ok(());
         }
 
-        let has_past_check = column.check_constraints(database).any(|cc| {
+        let has_past_check = column.check_constraints(database)?.any(|cc| {
             let expr = cc.expression(database).to_string().to_lowercase();
 
             // Check for "now()" or "current_timestamp"

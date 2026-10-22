@@ -52,7 +52,7 @@ impl<DB: DatabaseLike> TableRule for HasPrimaryKey<DB> {
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
     ) -> Result<(), crate::error::Error<DB>> {
-        if table.has_primary_key(database) {
+        if table.has_primary_key(database)? {
             Ok(())
         } else {
             let error: RuleErrorInfo = RuleErrorInfo::builder()

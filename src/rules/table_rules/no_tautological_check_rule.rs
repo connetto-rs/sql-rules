@@ -78,18 +78,10 @@ impl<DB: DatabaseLike> TableRule for NoTautologicalCheckRule<DB> {
         table: &<Self::Database as DatabaseLike>::Table,
     ) -> Result<(), crate::error::Error<DB>> {
         // Check if any check constraint is tautological
-        for check_constraint in table.check_constraints(database) {
-            if check_constraint.is_tautology(database) {
+        for check_constraint in table.check_constraints(database)? {
+            if check_constraint.is_tautology(database)? {
                 let table_name = table.table_name();
-
-                // Find the first tautological check constraint
-                let tautological_constraint = table
-                    .check_constraints(database)
-                    .find(|cc| cc.is_tautology(database))
-                    .map_or_else(
-                        || "unknown".to_string(),
-                        |cc| cc.expression(database).to_string(),
-                    );
+                let tautological_constraint = check_constraint.expression(database).to_string();
 
                 let error: RuleErrorInfo = RuleErrorInfo::builder()
                     .rule("NoTautologicalCheckRule")

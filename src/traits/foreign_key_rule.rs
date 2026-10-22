@@ -15,7 +15,8 @@ pub trait ForeignKeyRule {
     ///
     /// # Errors
     ///
-    /// Returns an error if the foreign key violates this rule.
+    /// Returns an error if the foreign key violates this rule, or
+    /// [`Error::Lookup`] if a schema object the rule reads cannot be resolved.
     fn validate_foreign_key(
         &self,
         database: &Self::Database,

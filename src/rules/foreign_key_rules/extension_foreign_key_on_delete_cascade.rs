@@ -42,6 +42,20 @@ use crate::{
 /// .unwrap();
 /// assert!(constrainer.validate_schema(&invalid_schema).is_err());
 ///
+/// // A named extension FK is reported by its name
+/// let invalid_named = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE parent_table (id INT PRIMARY KEY);
+/// CREATE TABLE extension_table (
+///     id INT PRIMARY KEY,
+///     CONSTRAINT extension_parent FOREIGN KEY (id) REFERENCES parent_table(id)
+/// );
+/// ",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&invalid_named).unwrap_err().to_string();
+/// assert!(error.contains("Extension foreign key 'extension_parent' in table 'extension_table'"));
+///
 /// // Extension FK with ON DELETE CASCADE - should pass
 /// let valid_schema = ParserDB::parse::<GenericDialect>(
 ///     "
@@ -96,32 +110,30 @@ impl<DB: DatabaseLike> ForeignKeyRule for ExtensionForeignKeyOnDeleteCascade<DB>
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
     ) -> Result<(), crate::prelude::Error<DB>> {
         // Only check extension foreign keys
-        if foreign_key.is_extension_foreign_key(database)
+        if foreign_key.is_extension_foreign_key(database)?
             && !foreign_key.on_delete_cascade(database)
         {
             let host_table = foreign_key.host_table(database);
-            let referenced_table = foreign_key.referenced_table(database);
+            let referenced_table = foreign_key.referenced_table(database)?;
 
-            let fk_name = foreign_key.foreign_key_name().map_or_else(
-                || {
-                    format!(
-                        "{}.({}) -> {}.({}) ",
-                        host_table.table_name(),
-                        foreign_key
-                            .host_columns(database)
-                            .map(ColumnLike::column_name)
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                        referenced_table.table_name(),
-                        foreign_key
-                            .referenced_columns(database)
-                            .map(ColumnLike::column_name)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                },
-                ToString::to_string,
-            );
+            let fk_name = match foreign_key.foreign_key_name() {
+                Some(name) => name.to_string(),
+                None => format!(
+                    "{}.({}) -> {}.({}) ",
+                    host_table.table_name(),
+                    foreign_key
+                        .host_columns(database)?
+                        .map(ColumnLike::column_name)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    referenced_table.table_name(),
+                    foreign_key
+                        .referenced_columns(database)?
+                        .map(ColumnLike::column_name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            };
 
             let error: RuleErrorInfo = RuleErrorInfo::builder()
                 .rule("ExtensionForeignKeyOnDeleteCascade")

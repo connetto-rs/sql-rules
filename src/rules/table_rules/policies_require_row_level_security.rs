@@ -61,8 +61,8 @@ impl<DB: DatabaseLike> TableRule for PoliciesRequireRowLevelSecurity<DB> {
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
     ) -> Result<(), crate::error::Error<DB>> {
-        let has_policies = table.policies(database).next().is_some();
-        let is_rls_enabled = table.has_row_level_security(database);
+        let has_policies = table.policies(database)?.next().is_some();
+        let is_rls_enabled = table.has_row_level_security(database)?;
 
         if has_policies && !is_rls_enabled {
             let error: RuleErrorInfo = RuleErrorInfo::builder()

@@ -33,6 +33,23 @@ use sql_traits::traits::{CheckConstraintLike, ColumnLike, DatabaseLike, TableLik
 /// // Valid: Textual column with both constraints
 /// let valid_schema = ParserDB::parse::<GenericDialect>("CREATE TABLE users (name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 255));").unwrap();
 /// assert!(constrainer.validate_schema(&valid_schema).is_ok());
+///
+/// // Invalid: an indexed textual column longer than 255 characters
+/// let indexed_too_long = ParserDB::parse::<GenericDialect>(
+///     "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 1000));
+///      CREATE INDEX users_name ON users (name);",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&indexed_too_long).unwrap_err().to_string();
+/// assert!(error.contains("'users.name' appears in an index but has length limit"));
+///
+/// // Valid: the tightest of several length checks decides the limit
+/// let indexed_tightest = ParserDB::parse::<GenericDialect>(
+///     "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 300), CHECK (LENGTH(name) <= 200));
+///      CREATE INDEX users_name ON users (name);",
+/// )
+/// .unwrap();
+/// assert!(constrainer.validate_schema(&indexed_tightest).is_ok());
 /// ```
 pub struct TextualColumnRule<DB>(std::marker::PhantomData<DB>);
 
@@ -55,9 +72,13 @@ impl<DB: DatabaseLike> TextualColumnRule<DB> {
         database: &DB,
         column: &<DB as DatabaseLike>::Column,
     ) -> Result<(), crate::error::Error<DB>> {
-        let has_not_empty_check = column
-            .check_constraints(database)
-            .any(|cc| cc.is_not_empty_text_constraint(database));
+        let mut has_not_empty_check = false;
+        for cc in column.check_constraints(database)? {
+            if cc.is_not_empty_text_constraint(database)? {
+                has_not_empty_check = true;
+                break;
+            }
+        }
 
         if !has_not_empty_check {
             let table_name = column.table(database).table_name();
@@ -89,8 +110,8 @@ impl<DB: DatabaseLike> TextualColumnRule<DB> {
     ) -> Result<usize, crate::error::Error<DB>> {
         let mut max_length: Option<usize> = None;
 
-        for cc in column.check_constraints(database) {
-            if let Some(limit) = cc.is_upper_bounded_text_constraint(database) {
+        for cc in column.check_constraints(database)? {
+            if let Some(limit) = cc.is_upper_bounded_text_constraint(database)? {
                 match max_length {
                     Some(current) => {
                         if limit < current {
@@ -139,11 +160,17 @@ impl<DB: DatabaseLike> TextualColumnRule<DB> {
         let column_name = column.column_name();
         let table_name = table.table_name();
 
-        let in_unique_index = table.indices(database).any(|idx| {
-            idx.columns(database)
+        let mut in_unique_index = false;
+        for index in table.indices(database)? {
+            if index
+                .columns(database)?
                 .any(|c| c.column_name() == column_name)
-        });
-        let in_primary_key = column.is_primary_key(database);
+            {
+                in_unique_index = true;
+                break;
+            }
+        }
+        let in_primary_key = column.is_primary_key(database)?;
         let in_index = in_unique_index || in_primary_key;
 
         if in_index {

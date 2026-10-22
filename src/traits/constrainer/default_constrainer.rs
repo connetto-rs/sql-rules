@@ -6,7 +6,7 @@ use crate::{
     prelude::{
         ExtensionForeignKeyOnDeleteCascade, NoNegationCheckRule, NoRustKeywordColumnName,
         NoRustKeywordForeignKeyName, NoRustKeywordTableName, NoTautologicalCheckRule,
-        PrimaryKeyReferenceEndsWithId, ReferencesUniqueIndex,
+        PrimaryKeyReferenceEndsWithId,
     },
     rules::{
         CompatibleForeignKey, HasPrimaryKey, LowercaseColumnName, LowercaseForeignKeyName,
@@ -110,7 +110,6 @@ where
         // Register all foreign key constraints
         constrainer.register_foreign_key_rule(Box::new(CompatibleForeignKey::default()));
         constrainer.register_foreign_key_rule(Box::new(LowercaseForeignKeyName::default()));
-        constrainer.register_foreign_key_rule(Box::new(ReferencesUniqueIndex::default()));
         constrainer.register_foreign_key_rule(Box::new(PrimaryKeyReferenceEndsWithId::default()));
         constrainer
             .register_foreign_key_rule(Box::new(ExtensionForeignKeyOnDeleteCascade::default()));

@@ -102,7 +102,7 @@ impl<DB: DatabaseLike> TableRule for NonRedundantExtensionDag<DB> {
     ) -> Result<(), crate::error::Error<DB>> {
         // Collect all directly extended tables
         let extended_tables = table
-            .extended_tables(database)
+            .extended_tables(database)?
             .collect::<Vec<&<DB as DatabaseLike>::Table>>();
 
         for (i, extended_table) in extended_tables.iter().enumerate() {
@@ -110,7 +110,7 @@ impl<DB: DatabaseLike> TableRule for NonRedundantExtensionDag<DB> {
                 if i == j {
                     continue;
                 }
-                if other_extended_table.is_descendant_of(database, extended_table)
+                if other_extended_table.is_descendant_of(database, extended_table)?
                     || extended_table == other_extended_table
                 {
                     let error: RuleErrorInfo = RuleErrorInfo::builder()

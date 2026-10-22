@@ -44,7 +44,8 @@ pub trait Constrainer: Default {
     ///
     /// # Errors
     ///
-    /// Returns an error if any table rule is violated.
+    /// Returns an error if any table rule is violated, or [`Error::Lookup`] if
+    /// a schema object a rule reads cannot be resolved.
     fn encounter_table(
         &self,
         database: &Self::Database,
@@ -58,7 +59,8 @@ pub trait Constrainer: Default {
     ///
     /// # Errors
     ///
-    /// Returns an error if any column rule is violated.
+    /// Returns an error if any column rule is violated, or [`Error::Lookup`]
+    /// if a schema object a rule reads cannot be resolved.
     fn encounter_column(
         &self,
         database: &Self::Database,
@@ -73,7 +75,8 @@ pub trait Constrainer: Default {
     ///
     /// # Errors
     ///
-    /// Returns an error if any foreign key rule is violated.
+    /// Returns an error if any foreign key rule is violated, or
+    /// [`Error::Lookup`] if a schema object a rule reads cannot be resolved.
     fn encounter_foreign_key(
         &self,
         database: &Self::Database,
@@ -88,14 +91,16 @@ pub trait Constrainer: Default {
     ///
     /// # Errors
     ///
-    /// Returns an error if any rule is violated.
+    /// Returns an error if any rule is violated, or [`Error::Lookup`] if a
+    /// table's columns or foreign keys, or a schema object a rule reads,
+    /// cannot be resolved.
     fn validate_schema(&self, database: &Self::Database) -> Result<(), Error<Self::Database>> {
         for table in database.tables() {
             self.encounter_table(database, table)?;
-            for column in table.columns(database) {
+            for column in table.columns(database)? {
                 self.encounter_column(database, column)?;
             }
-            for foreign_key in table.foreign_keys(database) {
+            for foreign_key in table.foreign_keys(database)? {
                 self.encounter_foreign_key(database, foreign_key)?;
             }
         }

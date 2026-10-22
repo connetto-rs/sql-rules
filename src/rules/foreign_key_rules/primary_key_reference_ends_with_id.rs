@@ -2,7 +2,10 @@
 //! enforces that foreign key host columns that reference primary key columns
 //! (directly or indirectly) must have names ending with "id".
 
-use sql_traits::traits::{ColumnLike, DatabaseLike, ForeignKeyLike, TableLike};
+use sql_traits::{
+    errors::LookupError,
+    traits::{ColumnLike, DatabaseLike, ForeignKeyLike, TableLike},
+};
 
 use crate::{
     error::RuleErrorInfo,
@@ -45,7 +48,7 @@ use crate::{
 /// let valid_schema_indirect = ParserDB::parse::<GenericDialect>(
 ///     "
 /// CREATE TABLE grandparent (id INT PRIMARY KEY);
-/// CREATE TABLE parent (gp_id INT, FOREIGN KEY (gp_id) REFERENCES grandparent (id));
+/// CREATE TABLE parent (gp_id INT UNIQUE, FOREIGN KEY (gp_id) REFERENCES grandparent (id));
 /// CREATE TABLE child (parent_id INT, FOREIGN KEY (parent_id) REFERENCES parent (gp_id));
 /// ",
 /// )
@@ -60,6 +63,17 @@ use crate::{
 /// )
 /// .unwrap();
 /// assert!(constrainer.validate_schema(&valid_schema_non_pk).is_ok());
+///
+/// // `parent.owner_id` references a primary key, but `child` references `parent.code`
+/// let valid_schema_other_fk = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE owner (id INT PRIMARY KEY);
+/// CREATE TABLE parent (id INT PRIMARY KEY, code INT UNIQUE, owner_id INT REFERENCES owner (id));
+/// CREATE TABLE child (parent_code INT, FOREIGN KEY (parent_code) REFERENCES parent (code));
+/// ",
+/// )
+/// .unwrap();
+/// assert!(constrainer.validate_schema(&valid_schema_other_fk).is_ok());
 /// ```
 pub struct PrimaryKeyReferenceEndsWithId<C>(std::marker::PhantomData<C>);
 
@@ -79,6 +93,32 @@ impl<DB: DatabaseLike + 'static> From<PrimaryKeyReferenceEndsWithId<DB>>
     }
 }
 
+impl<DB: DatabaseLike> PrimaryKeyReferenceEndsWithId<DB> {
+    /// Returns whether `column` of `table` is the host column of a foreign key
+    /// whose referenced columns include a primary key column.
+    fn references_primary_key_through_foreign_key(
+        database: &DB,
+        table: &DB::Table,
+        column: &DB::Column,
+    ) -> Result<bool, LookupError> {
+        for fk in table.foreign_keys(database)? {
+            if !fk
+                .host_columns(database)?
+                .any(|fk_host_col| fk_host_col.column_name() == column.column_name())
+            {
+                continue;
+            }
+            for fk_ref_col in fk.referenced_columns(database)? {
+                let fk_ref_table = fk.referenced_table(database)?;
+                if fk_ref_table.is_primary_key_column(database, fk_ref_col)? {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+}
+
 impl<DB: DatabaseLike> ForeignKeyRule for PrimaryKeyReferenceEndsWithId<DB> {
     type Database = DB;
 
@@ -88,29 +128,20 @@ impl<DB: DatabaseLike> ForeignKeyRule for PrimaryKeyReferenceEndsWithId<DB> {
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
     ) -> Result<(), crate::prelude::Error<DB>> {
         let host_table = foreign_key.host_table(database);
-        let referenced_table = foreign_key.referenced_table(database);
+        let referenced_table = foreign_key.referenced_table(database)?;
 
         for (host_column, referenced_column) in foreign_key
-            .host_columns(database)
-            .zip(foreign_key.referenced_columns(database))
+            .host_columns(database)?
+            .zip(foreign_key.referenced_columns(database)?)
         {
             // Check if the referenced column is a primary key or references a primary key
-            let references_primary_key =
-                if referenced_table.is_primary_key_column(database, referenced_column) {
-                    true
-                } else {
-                    // Check if the referenced column itself references a primary key through a
-                    // foreign key
-                    referenced_table.foreign_keys(database).any(|fk| {
-                        fk.host_columns(database).any(|fk_host_col| {
-                            fk_host_col.column_name() == referenced_column.column_name()
-                                && fk.referenced_columns(database).any(|fk_ref_col| {
-                                    let fk_ref_table = fk.referenced_table(database);
-                                    fk_ref_table.is_primary_key_column(database, fk_ref_col)
-                                })
-                        })
-                    })
-                };
+            let references_primary_key = referenced_table
+                .is_primary_key_column(database, referenced_column)?
+                || Self::references_primary_key_through_foreign_key(
+                    database,
+                    referenced_table,
+                    referenced_column,
+                )?;
 
             if references_primary_key && !host_column.column_name().ends_with("id") {
                 let error: RuleErrorInfo = RuleErrorInfo::builder()
