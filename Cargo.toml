@@ -19,6 +19,12 @@ heck = "0.5"
 [dev-dependencies]
 sqlparser = { git = "https://github.com/apache/datafusion-sqlparser-rs", branch = "main" }
 
+# sql-traits requires `sqlparser` from crates.io and patches it to Apache main
+# in its own workspace only, so this crate repeats the patch to build a single
+# parser shared with the development dependency.
+[patch.crates-io]
+sqlparser = { git = "https://github.com/apache/datafusion-sqlparser-rs", branch = "main" }
+
 [lints.rust]
 missing_docs = "forbid"
 unused_macro_rules = "forbid"
