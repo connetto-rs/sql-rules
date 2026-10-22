@@ -104,7 +104,6 @@ constrainer.register_column_rule(Box::new(LowercaseColumnName::default()));
 | `LowercaseForeignKeyName` | Ensures foreign key names are lowercase. |
 | `NoRustKeywordForeignKeyName` | Ensures foreign key names are not reserved Rust keywords. |
 | `PrimaryKeyReferenceEndsWithId` | Ensures foreign keys referencing a primary key end with `_id` suffix. |
-| `ReferencesUniqueIndex` | Ensures foreign keys reference a unique index or primary key. |
 
 ## Contributing
 

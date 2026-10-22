@@ -45,7 +45,7 @@ use crate::{
 /// let valid_schema_indirect = ParserDB::parse::<GenericDialect>(
 ///     "
 /// CREATE TABLE grandparent (id INT PRIMARY KEY);
-/// CREATE TABLE parent (gp_id INT, FOREIGN KEY (gp_id) REFERENCES grandparent (id));
+/// CREATE TABLE parent (gp_id INT UNIQUE, FOREIGN KEY (gp_id) REFERENCES grandparent (id));
 /// CREATE TABLE child (parent_id INT, FOREIGN KEY (parent_id) REFERENCES parent (gp_id));
 /// ",
 /// )
