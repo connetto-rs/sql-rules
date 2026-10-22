@@ -41,7 +41,37 @@ use sql_traits::traits::{CheckConstraintLike, ColumnLike, DatabaseLike, TableLik
 /// )
 /// .unwrap();
 /// let error = constrainer.validate_schema(&indexed_too_long).unwrap_err().to_string();
-/// assert!(error.contains("'users.name' appears in an index but has length limit"));
+/// assert!(error.contains("'users.name' appears in an index but has length limit 1000 "));
+///
+/// // An indexed column may hold exactly 255 characters, written either way
+/// for check in ["LENGTH(name) <= 255", "LENGTH(name) < 256"] {
+///     let indexed_at_limit = ParserDB::parse::<GenericDialect>(&format!(
+///         "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK ({check}));
+///          CREATE INDEX users_name ON users (name);"
+///     ))
+///     .unwrap();
+///     assert!(constrainer.validate_schema(&indexed_at_limit).is_ok(), "{check}");
+/// }
+/// let indexed_over_limit = ParserDB::parse::<GenericDialect>(
+///     "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 256));
+///      CREATE INDEX users_name ON users (name);",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&indexed_over_limit).unwrap_err().to_string();
+/// assert!(error.contains("has length limit 256 "));
+///
+/// // A column outside every index may hold exactly 8192 characters
+/// let unindexed_at_limit = ParserDB::parse::<GenericDialect>(
+///     "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 8192));",
+/// )
+/// .unwrap();
+/// assert!(constrainer.validate_schema(&unindexed_at_limit).is_ok());
+/// let unindexed_over_limit = ParserDB::parse::<GenericDialect>(
+///     "CREATE TABLE users (id INT PRIMARY KEY, name TEXT CHECK (name <> ''), CHECK (LENGTH(name) <= 8193));",
+/// )
+/// .unwrap();
+/// let error = constrainer.validate_schema(&unindexed_over_limit).unwrap_err().to_string();
+/// assert!(error.contains("has length limit 8193 "));
 ///
 /// // Valid: the tightest of several length checks decides the limit
 /// let indexed_tightest = ParserDB::parse::<GenericDialect>(
@@ -111,7 +141,9 @@ impl<DB: DatabaseLike> TextualColumnRule<DB> {
         let mut max_length: Option<usize> = None;
 
         for cc in column.check_constraints(database)? {
-            if let Some(limit) = cc.is_upper_bounded_text_constraint(database)? {
+            if let Some(exclusive_bound) = cc.is_upper_bounded_text_constraint(database)? {
+                // sql-traits reports one past the longest allowed length.
+                let limit = exclusive_bound.saturating_sub(1);
                 match max_length {
                     Some(current) => {
                         if limit < current {
