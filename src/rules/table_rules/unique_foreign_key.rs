@@ -4,7 +4,10 @@
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use sql_traits::traits::{ColumnLike, DatabaseLike, ForeignKeyLike, TableLike};
+use sql_traits::{
+    errors::LookupError,
+    traits::{ColumnLike, DatabaseLike, ForeignKeyLike, TableLike},
+};
 
 use crate::{
     error::RuleErrorInfo,
@@ -68,22 +71,22 @@ impl<DB: DatabaseLike> TableRule for UniqueForeignKey<DB> {
         table: &<Self::Database as DatabaseLike>::Table,
     ) -> Result<(), crate::error::Error<DB>> {
         // Find the duplicate foreign keys to provide detailed error information
-        let constraints = table.foreign_keys(database).collect::<Vec<_>>();
-        let mut signatures_with_fks: Vec<_> = constraints
+        let constraints = table.foreign_keys(database)?.collect::<Vec<_>>();
+        let mut signatures_with_fks = constraints
             .iter()
             .map(|fk| {
                 let mut hasher = DefaultHasher::new();
-                for host_col in fk.host_columns(database) {
+                for host_col in fk.host_columns(database)? {
                     host_col.hash(&mut hasher);
                 }
-                let referenced_table = fk.referenced_table(database);
+                let referenced_table = fk.referenced_table(database)?;
                 referenced_table.hash(&mut hasher);
-                for referenced_col in fk.referenced_columns(database) {
+                for referenced_col in fk.referenced_columns(database)? {
                     referenced_col.hash(&mut hasher);
                 }
-                (hasher.finish(), *fk)
+                Ok((hasher.finish(), *fk))
             })
-            .collect();
+            .collect::<Result<Vec<_>, LookupError>>()?;
 
         signatures_with_fks.sort_unstable_by_key(|(sig, _)| *sig);
 
@@ -120,12 +123,12 @@ impl<DB: DatabaseLike> TableRule for UniqueForeignKey<DB> {
                 let mut fk_details = Vec::new();
                 for fk in &duplicate_fks {
                     let host_cols: Vec<_> = fk
-                        .host_columns(database)
+                        .host_columns(database)?
                         .map(ColumnLike::column_name)
                         .collect();
-                    let referenced_table = fk.referenced_table(database);
+                    let referenced_table = fk.referenced_table(database)?;
                     let referenced_cols: Vec<_> = fk
-                        .referenced_columns(database)
+                        .referenced_columns(database)?
                         .map(ColumnLike::column_name)
                         .collect();
 

@@ -3,7 +3,10 @@
 
 use std::collections::HashSet;
 
-use sql_traits::traits::{ColumnLike, DatabaseLike, TableLike};
+use sql_traits::{
+    errors::LookupError,
+    traits::{ColumnLike, DatabaseLike, TableLike},
+};
 
 use crate::{
     error::RuleErrorInfo,
@@ -117,14 +120,17 @@ impl<DB: DatabaseLike + 'static> From<UniqueColumnNamesInExtensionGraph<DB>>
 
 impl<DB: DatabaseLike> UniqueColumnNamesInExtensionGraph<DB> {
     /// Helper method to find duplicate column names in the extension graph
-    fn find_duplicate_columns(database: &DB, table: &<DB as DatabaseLike>::Table) -> Vec<String> {
+    fn find_duplicate_columns(
+        database: &DB,
+        table: &<DB as DatabaseLike>::Table,
+    ) -> Result<Vec<String>, LookupError> {
         let mut duplicates = Vec::new();
         let extended_tables = table
-            .extended_tables(database)
+            .extended_tables(database)?
             .collect::<Vec<&<DB as DatabaseLike>::Table>>();
 
         if extended_tables.is_empty() {
-            return duplicates;
+            return Ok(duplicates);
         }
 
         let mut extended_column_names: HashSet<String> = HashSet::new();
@@ -138,19 +144,19 @@ impl<DB: DatabaseLike> UniqueColumnNamesInExtensionGraph<DB> {
             }
             checked_tables.insert(table_name);
 
-            for column in extended_table.columns(database) {
+            for column in extended_table.columns(database)? {
                 extended_column_names.insert(column.column_name().to_string());
             }
 
-            for parent in extended_table.extended_tables(database) {
+            for parent in extended_table.extended_tables(database)? {
                 tables_to_check.push(parent);
             }
         }
 
-        for column in table.columns(database) {
+        for column in table.columns(database)? {
             let column_name = column.column_name();
             if table
-                .primary_key_columns(database)
+                .primary_key_columns(database)?
                 .any(|pk_col| pk_col.column_name() == column_name)
             {
                 continue;
@@ -160,7 +166,7 @@ impl<DB: DatabaseLike> UniqueColumnNamesInExtensionGraph<DB> {
             }
         }
 
-        duplicates
+        Ok(duplicates)
     }
 }
 
@@ -174,7 +180,7 @@ impl<DB: DatabaseLike> TableRule for UniqueColumnNamesInExtensionGraph<DB> {
     ) -> Result<(), crate::error::Error<DB>> {
         // Check if the table extends other tables
         let extended_tables = table
-            .extended_tables(database)
+            .extended_tables(database)?
             .collect::<Vec<&<DB as DatabaseLike>::Table>>();
 
         // If there are no extended tables, no constraint applies
@@ -197,18 +203,18 @@ impl<DB: DatabaseLike> TableRule for UniqueColumnNamesInExtensionGraph<DB> {
             checked_tables.insert(table_name);
 
             // Add column names from this extended table
-            for column in extended_table.columns(database) {
+            for column in extended_table.columns(database)? {
                 extended_column_names.insert(column.column_name().to_string());
             }
 
             // Add the parent tables of this extended table to check
-            for parent in extended_table.extended_tables(database) {
+            for parent in extended_table.extended_tables(database)? {
                 tables_to_check.push(parent);
             }
         }
 
         // Check if any column in the current table conflicts with extended tables
-        let duplicates = Self::find_duplicate_columns(database, table);
+        let duplicates = Self::find_duplicate_columns(database, table)?;
 
         if !duplicates.is_empty() {
             let duplicate_list = duplicates.join(", ");

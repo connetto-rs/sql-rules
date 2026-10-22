@@ -65,13 +65,13 @@ impl<DB: DatabaseLike> ColumnRule for NonCompositePrimaryKeyNamedId<DB> {
         column: &<Self::Database as DatabaseLike>::Column,
     ) -> Result<(), crate::error::Error<Self::Database>> {
         // Check if this column is a primary key
-        if !column.is_primary_key(database) {
+        if !column.is_primary_key(database)? {
             return Ok(());
         }
 
         // Get the table to check if it has a composite primary key
         let table = column.table(database);
-        let pk_columns: Vec<_> = table.primary_key_columns(database).collect();
+        let pk_columns: Vec<_> = table.primary_key_columns(database)?.collect();
 
         // If the primary key is composite, the constraint doesn't apply
         if pk_columns.len() > 1 {

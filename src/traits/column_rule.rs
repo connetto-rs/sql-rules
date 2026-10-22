@@ -20,7 +20,8 @@ pub trait ColumnRule {
     ///
     /// # Errors
     ///
-    /// Returns an error if the column violates this rule.
+    /// Returns an error if the column violates this rule, or
+    /// [`Error::Lookup`] if a schema object the rule reads cannot be resolved.
     fn validate_column(
         &self,
         database: &Self::Database,

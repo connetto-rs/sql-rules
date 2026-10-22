@@ -55,7 +55,7 @@ impl<DB: DatabaseLike> TableRule for UniqueCheckRule<DB> {
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
     ) -> Result<(), crate::error::Error<DB>> {
-        let mut constraints = table.check_constraints(database).collect::<Vec<_>>();
+        let mut constraints = table.check_constraints(database)?.collect::<Vec<_>>();
         constraints.sort_unstable_by_key(|c| c.expression(database));
         for window in constraints.windows(2) {
             if window[0].expression(database) == window[1].expression(database) {

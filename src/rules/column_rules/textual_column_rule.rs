@@ -55,9 +55,13 @@ impl<DB: DatabaseLike> TextualColumnRule<DB> {
         database: &DB,
         column: &<DB as DatabaseLike>::Column,
     ) -> Result<(), crate::error::Error<DB>> {
-        let has_not_empty_check = column
-            .check_constraints(database)
-            .any(|cc| cc.is_not_empty_text_constraint(database));
+        let mut has_not_empty_check = false;
+        for cc in column.check_constraints(database)? {
+            if cc.is_not_empty_text_constraint(database)? {
+                has_not_empty_check = true;
+                break;
+            }
+        }
 
         if !has_not_empty_check {
             let table_name = column.table(database).table_name();
@@ -89,8 +93,8 @@ impl<DB: DatabaseLike> TextualColumnRule<DB> {
     ) -> Result<usize, crate::error::Error<DB>> {
         let mut max_length: Option<usize> = None;
 
-        for cc in column.check_constraints(database) {
-            if let Some(limit) = cc.is_upper_bounded_text_constraint(database) {
+        for cc in column.check_constraints(database)? {
+            if let Some(limit) = cc.is_upper_bounded_text_constraint(database)? {
                 match max_length {
                     Some(current) => {
                         if limit < current {
@@ -139,11 +143,17 @@ impl<DB: DatabaseLike> TextualColumnRule<DB> {
         let column_name = column.column_name();
         let table_name = table.table_name();
 
-        let in_unique_index = table.indices(database).any(|idx| {
-            idx.columns(database)
+        let mut in_unique_index = false;
+        for index in table.indices(database)? {
+            if index
+                .columns(database)?
                 .any(|c| c.column_name() == column_name)
-        });
-        let in_primary_key = column.is_primary_key(database);
+            {
+                in_unique_index = true;
+                break;
+            }
+        }
+        let in_primary_key = column.is_primary_key(database)?;
         let in_index = in_unique_index || in_primary_key;
 
         if in_index {

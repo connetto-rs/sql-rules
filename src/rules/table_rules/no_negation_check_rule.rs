@@ -77,20 +77,17 @@ impl<DB: DatabaseLike> TableRule for NoNegationCheckRule<DB> {
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
     ) -> Result<(), crate::error::Error<DB>> {
-        if table
-            .check_constraints(database)
-            .any(|cc| cc.is_negation(database))
-        {
-            let table_name = table.table_name();
+        let mut negation_constraint = None;
+        for cc in table.check_constraints(database)? {
+            if cc.is_negation(database)? {
+                negation_constraint = Some(cc);
+                break;
+            }
+        }
 
-            // Find the first negation check constraint
-            let negation_constraint = table
-                .check_constraints(database)
-                .find(|cc| cc.is_negation(database))
-                .map_or_else(
-                    || "unknown".to_string(),
-                    |cc| cc.expression(database).to_string(),
-                );
+        if let Some(negation_constraint) = negation_constraint {
+            let table_name = table.table_name();
+            let negation_constraint = negation_constraint.expression(database).to_string();
 
             let error: RuleErrorInfo = RuleErrorInfo::builder()
                 .rule("NoNegationCheckRule")

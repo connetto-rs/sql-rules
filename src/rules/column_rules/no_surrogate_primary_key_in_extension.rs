@@ -87,12 +87,12 @@ impl<DB: DatabaseLike> ColumnRule for NoSurrogatePrimaryKeyInExtension<DB> {
         database: &Self::Database,
         column: &<Self::Database as DatabaseLike>::Column,
     ) -> Result<(), crate::error::Error<DB>> {
-        if !column.is_primary_key(database) {
+        if !column.is_primary_key(database)? {
             return Ok(());
         }
 
         let table = column.table(database);
-        if !table.is_extension(database) {
+        if !table.is_extension(database)? {
             return Ok(());
         }
 

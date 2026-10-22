@@ -125,19 +125,19 @@ impl<DB: DatabaseLike> TableRule for NoForbiddenColumnInExtension<DB> {
         table: &<Self::Database as DatabaseLike>::Table,
     ) -> Result<(), crate::error::Error<DB>> {
         // Check if the table extends other tables
-        if !table.is_extension(database) {
+        if !table.is_extension(database)? {
             // If the table doesn't extend any other table, the constraint doesn't apply
             return Ok(());
         }
 
         // Check if any column has the forbidden name (case-insensitive comparison)
         let forbidden_name_lower = self.forbidden_name.to_lowercase();
-        for column in table.columns(database) {
+        for column in table.columns(database)? {
             let column_name_lower = column.column_name().to_lowercase();
             if column_name_lower == forbidden_name_lower {
                 let table_name = table.table_name();
                 let extended_table_names = table
-                    .extended_tables(database)
+                    .extended_tables(database)?
                     .map(TableLike::table_name)
                     .collect::<Vec<_>>();
 

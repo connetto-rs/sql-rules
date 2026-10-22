@@ -14,7 +14,8 @@ pub trait TableRule {
     ///
     /// # Errors
     ///
-    /// Returns an error if the table violates this rule.
+    /// Returns an error if the table violates this rule, or
+    /// [`Error::Lookup`] if a schema object the rule reads cannot be resolved.
     fn validate_table(
         &self,
         database: &Self::Database,

@@ -3,7 +3,7 @@
 
 mod rule_error_info;
 pub use rule_error_info::RuleErrorInfo;
-use sql_traits::traits::DatabaseLike;
+use sql_traits::{errors::LookupError, traits::DatabaseLike};
 
 use crate::traits::RuleFailureInformation;
 
@@ -22,4 +22,8 @@ pub enum Error<DB: DatabaseLike> {
     #[error("Foreign key rule violated: {1}")]
     /// Error indicating that a foreign key rule was violated.
     ForeignKey(Box<DB::ForeignKey>, Box<dyn RuleFailureInformation>),
+    #[error("Schema lookup failed: {0}")]
+    /// Error indicating that a rule could not resolve a schema object it
+    /// depends on, such as the table a foreign key references.
+    Lookup(#[from] LookupError),
 }
