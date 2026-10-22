@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Earth Metabolome Initiative"]
 license = "MIT"
-repository = "https://github.com/earth-metabolome-initiative/sql-rules"
+repository = "https://github.com/connetto-rs/sql-rules"
 description = "Higher-level rules and validation for SQL schemas based on sql-traits"
 readme = "README.md"
 keywords = ["sql", "schema", "validation", "rules", "linter"]
 categories = ["database", "development-tools"]
 
 [dependencies]
-sql-traits = { git = "https://github.com/earth-metabolome-initiative/sql-traits", branch = "main" }
+sql-traits = { git = "https://github.com/connetto-rs/sql-traits", branch = "main" }
 inflection-rs = {git = "https://github.com/LucaCappelletti94/inflection-rs", branch = "main"}
 thiserror = "2.0"
 heck = "0.5"

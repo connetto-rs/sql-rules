@@ -1,11 +1,11 @@
 # SQL Rules
 
-[![CI](https://github.com/earth-metabolome-initiative/sql-rules/workflows/Rust%20CI/badge.svg)](https://github.com/earth-metabolome-initiative/sql-rules/actions)
-[![Security Audit](https://github.com/earth-metabolome-initiative/sql-rules/workflows/Security%20Audit/badge.svg)](https://github.com/earth-metabolome-initiative/sql-rules/actions)
+[![CI](https://github.com/connetto-rs/sql-rules/workflows/Rust%20CI/badge.svg)](https://github.com/connetto-rs/sql-rules/actions)
+[![Security Audit](https://github.com/connetto-rs/sql-rules/workflows/Security%20Audit/badge.svg)](https://github.com/connetto-rs/sql-rules/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Codecov](https://codecov.io/gh/earth-metabolome-initiative/sql-rules/branch/main/graph/badge.svg)](https://codecov.io/gh/earth-metabolome-initiative/sql-rules)
+[![Codecov](https://codecov.io/gh/connetto-rs/sql-rules/branch/main/graph/badge.svg)](https://codecov.io/gh/connetto-rs/sql-rules)
 
-[SQL-traits](https://github.com/earth-metabolome-initiative/sql-traits)-based higher-level rules for validating SQL schemas. These are general-purpose rules that are often desirable in SQL projects to enforce common standards (naming conventions, best practices) which are not strict SQL requirements but improve project quality and consistency.
+[SQL-traits](https://github.com/connetto-rs/sql-traits)-based higher-level rules for validating SQL schemas. These are general-purpose rules that are often desirable in SQL projects to enforce common standards (naming conventions, best practices) which are not strict SQL requirements but improve project quality and consistency.
 
 ## Installation
 
