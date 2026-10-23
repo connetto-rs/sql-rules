@@ -99,16 +99,22 @@ jobs:
       uses: dtolnay/rust-toolchain@nightly
       with:
         components: llvm-tools-preview
-    - name: Install tarpaulin
-      uses: taiki-e/install-action@cargo-tarpaulin
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      with:
+        tool: cargo-llvm-cov
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y libfontconfig1-dev
     - name: Generate coverage
-      run: cargo tarpaulin --engine=llvm --out xml --workspace --run-types AllTargets --run-types Doctests
+      run: |
+        mkdir -p target/coverage
+        cargo llvm-cov --workspace --all-targets --no-report
+        cargo llvm-cov --workspace --doc --no-clean --lcov --output-path target/coverage/coverage.lcov
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
+        files: target/coverage/coverage.lcov
         fail_ci_if_error: false
