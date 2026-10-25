@@ -64,7 +64,7 @@ jobs:
       with:
         components: clippy
     - name: Rust Cache
-      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -80,7 +80,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
     - name: Rust Cache
-      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
     - name: Install dependencies
       run: |
         sudo apt-get update
@@ -100,7 +100,7 @@ jobs:
       with:
         components: llvm-tools-preview
     - name: Install cargo-llvm-cov
-      uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
       with:
         tool: cargo-llvm-cov
     - name: Install dependencies
@@ -113,7 +113,7 @@ jobs:
         cargo llvm-cov --workspace --all-targets --no-report
         cargo llvm-cov --workspace --doc --no-clean --lcov --output-path target/coverage/coverage.lcov
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: target/coverage/coverage.lcov
