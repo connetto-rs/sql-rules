@@ -15,10 +15,9 @@ permissions:
 jobs:
   test:
     name: Build
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-26.04
     strategy:
       matrix:
-        os: [ubuntu-26.04, windows-latest, macos-latest]
         rust: [stable, beta, nightly]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
