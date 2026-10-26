@@ -197,29 +197,20 @@ impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
             let other_referenced_tables = referenced_table
                 .referenced_tables_via_column(database, referenced_column.borrow())?;
 
-            let host_refs = if !host_referenced_tables.is_empty() {
-                host_referenced_tables
-                    .iter()
-                    .map(TableLike::table_name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            } else if host_column.is_primary_key(database)? {
-                format!("{} (primary key)", host_table.table_name())
-            } else {
-                "none".to_string()
+            let describe = |tables: &[&<DB as DatabaseLike>::Table]| {
+                if tables.is_empty() {
+                    "none".to_owned()
+                } else {
+                    tables
+                        .iter()
+                        .copied()
+                        .map(TableLike::table_name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
             };
-
-            let other_refs = if !other_referenced_tables.is_empty() {
-                other_referenced_tables
-                    .iter()
-                    .map(TableLike::table_name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            } else if referenced_column.is_primary_key(database)? {
-                format!("{} (primary key)", referenced_table.table_name())
-            } else {
-                "none".to_string()
-            };
+            let host_refs = describe(&host_referenced_tables);
+            let other_refs = describe(&other_referenced_tables);
 
             Ok((
                 format!(

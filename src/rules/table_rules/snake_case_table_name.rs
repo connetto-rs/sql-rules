@@ -93,10 +93,8 @@ impl<DB: DatabaseLike> TableRule for SnakeCaseTableName<DB> {
                 "contains double underscores"
             } else if table_name.chars().any(|c| c.is_ascii_uppercase()) {
                 "contains uppercase letters"
-            } else if table_name != expected_name {
-                "does not follow snake_case convention"
             } else {
-                "is not valid snake_case"
+                "does not follow snake_case convention"
             };
             reporter.table(
                 table,

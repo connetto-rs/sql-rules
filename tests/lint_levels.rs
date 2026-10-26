@@ -302,3 +302,59 @@ fn a_lookup_failure_is_reported_and_independent_checks_continue() {
         Err(Error::Lookup(_))
     ));
 }
+
+#[test]
+fn the_default_constrainer_reports_every_rule_at_its_group_level() {
+    let database = parse(
+        "CREATE TABLE bases (id INT PRIMARY KEY, label TEXT CHECK (LENGTH(label) <= 10));
+         CREATE TABLE lefts (id INT PRIMARY KEY REFERENCES bases (id) ON DELETE CASCADE);
+         CREATE TABLE rights (id INT PRIMARY KEY REFERENCES bases (id) ON DELETE CASCADE);
+         CREATE TABLE diamonds (
+             id INT PRIMARY KEY,
+             label TEXT CHECK (LENGTH(label) <= 10),
+             FOREIGN KEY (id) REFERENCES lefts (id) ON DELETE CASCADE,
+             FOREIGN KEY (id) REFERENCES rights (id) ON DELETE CASCADE
+         );
+         CREATE TABLE children (id SERIAL PRIMARY KEY DEFAULT 1 REFERENCES bases (id) ON DELETE CASCADE);
+         CREATE TABLE notes_ (
+             code INT PRIMARY KEY,
+             tags INT,
+             title_ INT,
+             body TEXT,
+             base INT,
+             expires_at TIMESTAMPTZ,
+             FOREIGN KEY (base) REFERENCES bases (id),
+             FOREIGN KEY (base) REFERENCES bases (id),
+             UNIQUE (tags),
+             UNIQUE (tags),
+             CHECK (code > 0),
+             CHECK (code > 0)
+         );",
+    );
+    let mut constrainer = DefaultConstrainer::<ParserDB>::default();
+    constrainer.set_group_level(LintGroup::Pedantic, Level::Warn);
+    constrainer.set_group_level(LintGroup::Perf, Level::Deny);
+    let raised = violations(&constrainer, &database);
+    for (rule, expected) in [
+        ("NonCompositePrimaryKeyNamedId", [Level::Warn].as_slice()),
+        ("SingularColumnName", &[Level::Warn]),
+        ("SnakeCaseColumnName", &[Level::Warn]),
+        ("SnakeCaseTableName", &[Level::Warn]),
+        ("TextualColumnRule", &[Level::Warn]),
+        ("NoSurrogatePrimaryKeyInExtension", &[Level::Deny]),
+        ("UniqueColumnNamesInExtensionGraph", &[Level::Warn]),
+        ("PrimaryKeyReferenceEndsWithId", &[Level::Warn, Level::Warn]),
+        ("UniqueForeignKey", &[Level::Warn]),
+        ("UniqueUniqueIndex", &[Level::Warn]),
+        ("UniqueCheckRule", &[Level::Warn]),
+    ] {
+        assert_eq!(raised_by(&raised, rule), expected, "{rule}");
+    }
+    assert!(
+        !raised
+            .iter()
+            .any(|violation| violation.rule().name == "PastTimeColumnRule"
+                && violation.object() == "notes_.expires_at"),
+        "a column naming a future instant is exempt"
+    );
+}
