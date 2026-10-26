@@ -34,3 +34,5 @@ mod tautological_with_check;
 pub use tautological_with_check::TautologicalWithCheck;
 mod unforced_row_level_security;
 pub use unforced_row_level_security::UnforcedRowLevelSecurity;
+mod correlated_policy_subquery;
+pub use correlated_policy_subquery::CorrelatedPolicySubquery;
