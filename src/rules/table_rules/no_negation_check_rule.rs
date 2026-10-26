@@ -5,8 +5,9 @@
 use sql_traits::traits::{CheckConstraintLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that tables do not have
@@ -69,43 +70,42 @@ impl<DB: DatabaseLike + 'static> From<NoNegationCheckRule<DB>> for GenericConstr
     }
 }
 
+impl<DB> Rule for NoNegationCheckRule<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoNegationCheckRule",
+            group: LintGroup::Correctness,
+            rationale: "A check that no row can satisfy makes every insert and update of the table fail.",
+            source: Some("https://www.postgresql.org/docs/current/sql-createtable.html"),
+        };
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for NoNegationCheckRule<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
-        let mut negation_constraint = None;
-        for cc in table.check_constraints(database)? {
-            if cc.is_negation(database)? {
-                negation_constraint = Some(cc);
-                break;
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
+        // Check if any check constraint is a negation
+        for check_constraint in table.check_constraints(database)? {
+            if check_constraint.is_negation(database)? {
+                let table_name = table.table_name();
+                let expression = check_constraint.expression(database).to_string();
+                reporter.table(
+                    table,
+                    format!(
+                        "Table '{table_name}' has a negation check constraint CHECK ({expression})."
+                    ),
+                    format!(
+                        "Remove the check constraint CHECK ({expression}) from table '{table_name}'."
+                    ),
+                )?;
             }
-        }
-
-        if let Some(negation_constraint) = negation_constraint {
-            let table_name = table.table_name();
-            let negation_constraint = negation_constraint.expression(database).to_string();
-
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("NoNegationCheckRule")
-                .unwrap()
-                .object(table_name.to_owned())
-                .unwrap()
-                .message(format!(
-                    "Table '{table_name}' has a negation check constraint: CHECK ({negation_constraint})"
-                ))
-                .unwrap()
-                .resolution("Remove the negation check constraint.".to_string())
-                .unwrap()
-                .try_into()
-                .unwrap();
-            return Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ));
         }
         Ok(())
     }

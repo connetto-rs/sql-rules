@@ -10,11 +10,13 @@ use sql_traits::{
 };
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
-/// Struct defining a constraint that enforces that table names are lowercase.
+/// Struct defining a constraint that enforces that foreign keys are unique
+/// per table.
 ///
 /// # Example
 ///
@@ -62,14 +64,27 @@ impl<DB: DatabaseLike + 'static> From<UniqueForeignKey<DB>> for GenericConstrain
     }
 }
 
+impl<DB> Rule for UniqueForeignKey<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "UniqueForeignKey",
+            group: LintGroup::Complexity,
+            rationale: "A duplicated foreign key enforces nothing more and is checked again on every write.",
+            source: None,
+        };
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for UniqueForeignKey<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         // Find the duplicate foreign keys to provide detailed error information
         let constraints = table.foreign_keys(database)?.collect::<Vec<_>>();
         let mut signatures_with_fks = constraints
@@ -90,88 +105,37 @@ impl<DB: DatabaseLike> TableRule for UniqueForeignKey<DB> {
 
         signatures_with_fks.sort_unstable_by_key(|(sig, _)| *sig);
 
-        // Find the first duplicate
-        let mut duplicate_fks = Vec::new();
         for window in signatures_with_fks.windows(2) {
-            if let [(sig1, fk1), (sig2, fk2)] = window
+            if let [(sig1, _), (sig2, fk)] = window
                 && sig1 == sig2
             {
-                duplicate_fks.push(*fk1);
-                duplicate_fks.push(*fk2);
-                break;
+                let table_name = table.table_name();
+                let host_cols: Vec<_> = fk
+                    .host_columns(database)?
+                    .map(ColumnLike::column_name)
+                    .collect();
+                let referenced_table = fk.referenced_table(database)?;
+                let referenced_cols: Vec<_> = fk
+                    .referenced_columns(database)?
+                    .map(ColumnLike::column_name)
+                    .collect();
+                let definition = format!(
+                    "FOREIGN KEY ({}) REFERENCES {} ({})",
+                    host_cols.join(", "),
+                    referenced_table.table_name(),
+                    referenced_cols.join(", ")
+                );
+                reporter.foreign_key(
+                    *fk,
+                    format!(
+                        "Table '{table_name}' has a duplicate of the foreign key {definition}."
+                    ),
+                    format!(
+                        "Remove one of the duplicate foreign key definitions from table '{table_name}'."
+                    ),
+                )?;
             }
         }
-
-        if !duplicate_fks.is_empty() {
-            let table_name = table.table_name();
-
-            let error: RuleErrorInfo = if duplicate_fks.is_empty() {
-                // Fallback for generic case
-                RuleErrorInfo::builder()
-                    .rule("UniqueForeignKey")
-                    .unwrap()
-                    .object(table_name.to_owned())
-                    .unwrap()
-                    .message(format!("Table '{table_name}' has duplicate foreign keys"))
-                    .unwrap()
-                    .resolution("Ensure all foreign keys in the table are unique".to_string())
-                    .unwrap()
-                    .try_into()
-                    .unwrap()
-            } else {
-                // Build detailed error message with the duplicate foreign keys
-                let mut fk_details = Vec::new();
-                for fk in &duplicate_fks {
-                    let host_cols: Vec<_> = fk
-                        .host_columns(database)?
-                        .map(ColumnLike::column_name)
-                        .collect();
-                    let referenced_table = fk.referenced_table(database)?;
-                    let referenced_cols: Vec<_> = fk
-                        .referenced_columns(database)?
-                        .map(ColumnLike::column_name)
-                        .collect();
-
-                    fk_details.push(format!(
-                        "FOREIGN KEY ({}) REFERENCES {} ({})",
-                        host_cols.join(", "),
-                        referenced_table.table_name(),
-                        referenced_cols.join(", ")
-                    ));
-                }
-
-                let message = format!(
-                    "Table '{}' has {} duplicate foreign key definitions:\n  - {}\nBoth foreign keys reference the same columns and target table",
-                    table_name,
-                    duplicate_fks.len(),
-                    fk_details.join("\n  - ")
-                );
-
-                let resolution = format!(
-                    "Remove one of the duplicate foreign key constraints from table '{}'. Keep only one: {}",
-                    table_name,
-                    fk_details.first().unwrap()
-                );
-
-                RuleErrorInfo::builder()
-                    .rule("UniqueForeignKey")
-                    .unwrap()
-                    .object(table_name.to_owned())
-                    .unwrap()
-                    .message(message)
-                    .unwrap()
-                    .resolution(resolution)
-                    .unwrap()
-                    .try_into()
-                    .unwrap()
-            };
-
-            return Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ));
-        }
-
         Ok(())
     }
 }

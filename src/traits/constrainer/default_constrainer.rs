@@ -1,166 +1,109 @@
-//! Submodule defining a default constrainer with all available constraints.
+//! Submodule defining a constrainer holding every generic rule at its group's
+//! default level.
 
 use sql_traits::traits::DatabaseLike;
 
 use crate::{
-    prelude::{
-        ExtensionForeignKeyOnDeleteCascade, NoNegationCheckRule, NoRustKeywordColumnName,
-        NoRustKeywordForeignKeyName, NoRustKeywordTableName, NoTautologicalCheckRule,
-        PrimaryKeyReferenceEndsWithId,
-    },
+    lint::Level,
     rules::{
-        CompatibleForeignKey, HasPrimaryKey, LowercaseColumnName, LowercaseForeignKeyName,
-        LowercaseTableName, NoForbiddenColumnInExtension, NoSurrogatePrimaryKeyInExtension,
-        NonCompositePrimaryKeyNamedId, NonRedundantExtensionDag, PastTimeColumnRule,
-        PluralTableName, PoliciesRequireRowLevelSecurity, SingularColumnName, SnakeCaseColumnName,
-        SnakeCaseTableName, TextualColumnRule, UniqueCheckRule, UniqueColumnNamesInExtensionGraph,
-        UniqueForeignKey, UniqueUniqueIndex,
+        CompatibleForeignKey, ExtensionForeignKeyOnDeleteCascade, HasPrimaryKey,
+        LowercaseColumnName, LowercaseForeignKeyName, LowercaseTableName,
+        NoForbiddenColumnInExtension, NoNegationCheckRule, NoRustKeywordColumnName,
+        NoRustKeywordForeignKeyName, NoRustKeywordTableName, NoSurrogatePrimaryKeyInExtension,
+        NoTautologicalCheckRule, NonCompositePrimaryKeyNamedId, NonEmptyTextualColumnRule,
+        NonRedundantExtensionDag, PastTimeColumnRule, PluralTableName,
+        PoliciesRequireRowLevelSecurity, PrimaryKeyReferenceEndsWithId, SingularColumnName,
+        SnakeCaseColumnName, SnakeCaseTableName, TextualColumnRule, UniqueCheckRule,
+        UniqueColumnNamesInExtensionGraph, UniqueForeignKey, UniqueUniqueIndex,
     },
-    traits::Constrainer,
+    traits::{ColumnRule, Constrainer, ForeignKeyRule, GenericConstrainer, TableRule},
 };
 
-/// A constrainer that comes pre-configured with all available constraints.
+/// A constrainer holding every generic rule at its group's default level.
 ///
-/// This struct provides a `Default` implementation that registers all available
-/// table, column, and foreign key constraints. This is useful for ensuring
-/// comprehensive validation of database schemas.
-///
-/// # Available Constraints
-///
-/// ## Table Constraints
-/// - [`HasPrimaryKey`]: Ensures all tables have a primary key
-/// - [`LowercaseTableName`]: Ensures table names are lowercase
-/// - [`SnakeCaseTableName`]: Ensures table names follow `snake_case` convention
-/// - [`PluralTableName`]: Ensures table names are plural
-/// - [`PoliciesRequireRowLevelSecurity`]: Ensures tables with policies have RLS enabled
-/// - [`NoForbiddenColumnInExtension`]: Prevents forbidden columns in extended
-///   tables
-/// - [`NonRedundantExtensionDag`]: Ensures no redundant edges in extension
-///   hierarchy
-/// - [`UniqueCheckRule`]: Ensures check constraint names are unique
-/// - [`UniqueColumnNamesInExtensionGraph`]: Ensures column names are unique
-///   across extension graphs
-/// - [`UniqueForeignKey`]: Ensures foreign key signatures are unique
-/// - [`UniqueUniqueIndex`]: Ensures unique index names are unique
-///
-/// ## Column Constraints
-/// - [`LowercaseColumnName`]: Ensures column names are lowercase
-/// - [`NonCompositePrimaryKeyNamedId`]: Ensures non-composite primary keys are
-///   named "id"
-/// - [`NoSurrogatePrimaryKeyInExtension`]: Ensures extension-table primary
-///   keys are not surrogate
-/// - [`SnakeCaseColumnName`]: Ensures column names follow `snake_case`
-///   convention
-/// - [`SingularColumnName`]: Ensures column names are singular
-/// - [`TextualColumnRule`]: Ensures textual columns have content and length checks
-/// - [`PastTimeColumnRule`]: Ensures time-related columns are in the past
-///
-/// ## Foreign Key Constraints
-/// - [`CompatibleForeignKey`]: Ensures foreign key columns are type-compatible
-/// - [`LowercaseForeignKeyName`]: Ensures foreign key names are lowercase
+/// `correctness` rules deny, `suspicious`, `perf`, `complexity` and `style`
+/// rules warn, and `pedantic` and `restriction` rules stay at `allow` until a
+/// level is set for them or their group.
 ///
 /// # Example
 ///
 /// ```
 /// use sql_rules::prelude::*;
+/// use sqlparser::dialect::GenericDialect;
 ///
-/// let constrainer = DefaultConstrainer::<ParserDB>::default();
-/// // All constraints are now registered and ready to use
+/// let database = ParserDB::parse::<GenericDialect>("CREATE TABLE t (type INT);").unwrap();
+/// let mut constrainer = DefaultConstrainer::<ParserDB>::default();
+/// let raised_by = |constrainer: &DefaultConstrainer<ParserDB>, rule: &str| {
+///     constrainer.diagnostics(&database).iter().any(|error| {
+///         matches!(error, Error::Violation(violation) if violation.rule().name == rule)
+///     })
+/// };
+/// assert!(!raised_by(&constrainer, "NoRustKeywordColumnName"));
+/// constrainer.set_group_level(LintGroup::Restriction, Level::Warn);
+/// assert!(raised_by(&constrainer, "NoRustKeywordColumnName"));
 /// ```
 pub struct DefaultConstrainer<DB: DatabaseLike> {
-    /// The underlying generic constrainer holding all constraints.
-    constrainer: super::generic_constrainer::GenericConstrainer<DB>,
+    constrainer: GenericConstrainer<DB>,
 }
 
-impl<DB: DatabaseLike + 'static> Default for DefaultConstrainer<DB>
-where
-    DB::Column: 'static,
-{
+impl<DB: DatabaseLike + 'static> Default for DefaultConstrainer<DB> {
     fn default() -> Self {
-        let mut constrainer = super::generic_constrainer::GenericConstrainer::default();
-
-        // Register all table constraints
-        constrainer.register_table_rule(Box::new(HasPrimaryKey::default()));
-        constrainer.register_table_rule(Box::new(LowercaseTableName::default()));
-        constrainer.register_table_rule(Box::new(SnakeCaseTableName::default()));
-        constrainer.register_table_rule(Box::new(PluralTableName::default()));
-        constrainer.register_table_rule(Box::new(PoliciesRequireRowLevelSecurity::default()));
-        constrainer.register_table_rule(Box::new(NoRustKeywordTableName::default()));
-        constrainer.register_table_rule(Box::new(NoTautologicalCheckRule::default()));
-        constrainer.register_table_rule(Box::new(NoNegationCheckRule::default()));
-        constrainer.register_table_rule(Box::new(NoForbiddenColumnInExtension::new(
-            "most_concrete_table",
-        )));
-        constrainer.register_table_rule(Box::new(NonRedundantExtensionDag::default()));
-        constrainer.register_table_rule(Box::new(UniqueCheckRule::default()));
-        constrainer.register_table_rule(Box::new(UniqueColumnNamesInExtensionGraph::default()));
-        constrainer.register_table_rule(Box::new(UniqueForeignKey::default()));
-        constrainer.register_table_rule(Box::new(UniqueUniqueIndex::default()));
-
-        // Register all column constraints
-        constrainer.register_column_rule(Box::new(LowercaseColumnName::default()));
-        constrainer.register_column_rule(Box::new(NonCompositePrimaryKeyNamedId::default()));
-        constrainer.register_column_rule(Box::new(NoSurrogatePrimaryKeyInExtension::default()));
-        constrainer.register_column_rule(Box::new(SnakeCaseColumnName::default()));
-        constrainer.register_column_rule(Box::new(SingularColumnName::default()));
-        constrainer.register_column_rule(Box::new(NoRustKeywordColumnName::default()));
-        constrainer.register_column_rule(Box::new(TextualColumnRule::default()));
-        constrainer.register_column_rule(Box::new(PastTimeColumnRule::default()));
-
-        // Register all foreign key constraints
-        constrainer.register_foreign_key_rule(Box::new(CompatibleForeignKey::default()));
-        constrainer.register_foreign_key_rule(Box::new(LowercaseForeignKeyName::default()));
-        constrainer.register_foreign_key_rule(Box::new(PrimaryKeyReferenceEndsWithId::default()));
-        constrainer
-            .register_foreign_key_rule(Box::new(ExtensionForeignKeyOnDeleteCascade::default()));
-        constrainer.register_foreign_key_rule(Box::new(NoRustKeywordForeignKeyName::default()));
-
+        let mut constrainer = GenericConstrainer::default();
+        let table_rules: [Box<dyn TableRule<Database = DB>>; 14] = [
+            Box::new(HasPrimaryKey::default()),
+            Box::new(LowercaseTableName::default()),
+            Box::new(SnakeCaseTableName::default()),
+            Box::new(PluralTableName::default()),
+            Box::new(PoliciesRequireRowLevelSecurity::default()),
+            Box::new(NoRustKeywordTableName::default()),
+            Box::new(NoTautologicalCheckRule::default()),
+            Box::new(NoNegationCheckRule::default()),
+            Box::new(NoForbiddenColumnInExtension::new("most_concrete_table")),
+            Box::new(NonRedundantExtensionDag::default()),
+            Box::new(UniqueCheckRule::default()),
+            Box::new(UniqueColumnNamesInExtensionGraph::default()),
+            Box::new(UniqueForeignKey::default()),
+            Box::new(UniqueUniqueIndex::default()),
+        ];
+        for rule in table_rules {
+            constrainer.register_table_rule_with_floor(rule, Level::Allow);
+        }
+        let column_rules: [Box<dyn ColumnRule<Database = DB>>; 9] = [
+            Box::new(LowercaseColumnName::default()),
+            Box::new(NonCompositePrimaryKeyNamedId::default()),
+            Box::new(NoSurrogatePrimaryKeyInExtension::default()),
+            Box::new(SnakeCaseColumnName::default()),
+            Box::new(SingularColumnName::default()),
+            Box::new(NoRustKeywordColumnName::default()),
+            Box::new(TextualColumnRule::default()),
+            Box::new(NonEmptyTextualColumnRule::default()),
+            Box::new(PastTimeColumnRule::default()),
+        ];
+        for rule in column_rules {
+            constrainer.register_column_rule_with_floor(rule, Level::Allow);
+        }
+        let foreign_key_rules: [Box<dyn ForeignKeyRule<Database = DB>>; 5] = [
+            Box::new(CompatibleForeignKey::default()),
+            Box::new(LowercaseForeignKeyName::default()),
+            Box::new(PrimaryKeyReferenceEndsWithId::default()),
+            Box::new(ExtensionForeignKeyOnDeleteCascade::default()),
+            Box::new(NoRustKeywordForeignKeyName::default()),
+        ];
+        for rule in foreign_key_rules {
+            constrainer.register_foreign_key_rule_with_floor(rule, Level::Allow);
+        }
         Self { constrainer }
     }
 }
 
-impl<DB: DatabaseLike + 'static> Constrainer for DefaultConstrainer<DB>
-where
-    DB::Column: 'static,
-{
+impl<DB: DatabaseLike + 'static> Constrainer for DefaultConstrainer<DB> {
     type Database = DB;
 
-    fn table_rules(
-        &self,
-    ) -> impl Iterator<Item = &dyn crate::traits::TableRule<Database = Self::Database>> {
-        self.constrainer.table_rules()
+    fn constrainer(&self) -> &GenericConstrainer<DB> {
+        &self.constrainer
     }
 
-    fn column_rules(
-        &self,
-    ) -> impl Iterator<Item = &dyn crate::traits::ColumnRule<Database = Self::Database>> {
-        self.constrainer.column_rules()
-    }
-
-    fn foreign_key_rules(
-        &self,
-    ) -> impl Iterator<Item = &dyn crate::traits::ForeignKeyRule<Database = Self::Database>> {
-        self.constrainer.foreign_key_rules()
-    }
-
-    fn register_table_rule(
-        &mut self,
-        rule: Box<dyn crate::traits::TableRule<Database = Self::Database>>,
-    ) {
-        self.constrainer.register_table_rule(rule);
-    }
-
-    fn register_column_rule(
-        &mut self,
-        rule: Box<dyn crate::traits::ColumnRule<Database = Self::Database>>,
-    ) {
-        self.constrainer.register_column_rule(rule);
-    }
-
-    fn register_foreign_key_rule(
-        &mut self,
-        rule: Box<dyn crate::traits::ForeignKeyRule<Database = Self::Database>>,
-    ) {
-        self.constrainer.register_foreign_key_rule(rule);
+    fn constrainer_mut(&mut self) -> &mut GenericConstrainer<DB> {
+        &mut self.constrainer
     }
 }

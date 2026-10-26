@@ -5,8 +5,9 @@
 use sql_traits::traits::{ColumnLike, DatabaseLike, ForeignKeyLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, ForeignKeyRule, GenericConstrainer},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, ForeignKeyRule, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that extension foreign keys
@@ -42,7 +43,7 @@ use crate::{
 /// .unwrap();
 /// assert!(constrainer.validate_schema(&invalid_schema).is_err());
 ///
-/// // A named extension FK is reported by its name
+/// // A named extension FK is reported by its name and keeps it in the fix
 /// let invalid_named = ParserDB::parse::<GenericDialect>(
 ///     "
 /// CREATE TABLE parent_table (id INT PRIMARY KEY);
@@ -53,8 +54,11 @@ use crate::{
 /// ",
 /// )
 /// .unwrap();
-/// let error = constrainer.validate_schema(&invalid_named).unwrap_err().to_string();
-/// assert!(error.contains("Extension foreign key 'extension_parent' in table 'extension_table'"));
+/// let Err(Error::Violation(violation)) = constrainer.validate_schema(&invalid_named) else {
+///     panic!("the named extension foreign key must be reported");
+/// };
+/// assert_eq!(violation.object(), "extension_table.extension_parent");
+/// assert!(violation.resolution().contains("CONSTRAINT extension_parent FOREIGN KEY (id)"));
 ///
 /// // Extension FK with ON DELETE CASCADE - should pass
 /// let valid_schema = ParserDB::parse::<GenericDialect>(
@@ -101,61 +105,57 @@ impl<DB: DatabaseLike + 'static> From<ExtensionForeignKeyOnDeleteCascade<DB>>
     }
 }
 
+impl<C> Rule for ExtensionForeignKeyOnDeleteCascade<C> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "ExtensionForeignKeyOnDeleteCascade",
+            group: LintGroup::Suspicious,
+            rationale: "PostgreSQL's default `NO ACTION` refuses to delete a parent row while extension rows reference it, so extension rows have to follow their parent with `ON DELETE CASCADE`.",
+            source: Some(
+                "https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK",
+            ),
+        };
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> ForeignKeyRule for ExtensionForeignKeyOnDeleteCascade<DB> {
     type Database = DB;
 
-    fn validate_foreign_key(
+    fn check_foreign_key(
         &self,
         database: &Self::Database,
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
-    ) -> Result<(), crate::prelude::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         // Only check extension foreign keys
         if foreign_key.is_extension_foreign_key(database)?
             && !foreign_key.on_delete_cascade(database)
         {
-            let host_table = foreign_key.host_table(database);
-            let referenced_table = foreign_key.referenced_table(database)?;
-
-            let fk_name = match foreign_key.foreign_key_name() {
-                Some(name) => name.to_string(),
-                None => format!(
-                    "{}.({}) -> {}.({}) ",
-                    host_table.table_name(),
-                    foreign_key
-                        .host_columns(database)?
-                        .map(ColumnLike::column_name)
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    referenced_table.table_name(),
-                    foreign_key
-                        .referenced_columns(database)?
-                        .map(ColumnLike::column_name)
-                        .collect::<Vec<_>>()
-                        .join(", ")
+            let host = foreign_key.host_table(database).table_name();
+            let referenced = foreign_key.referenced_table(database)?.table_name();
+            let host_columns = foreign_key
+                .host_columns(database)?
+                .map(ColumnLike::column_name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let referenced_columns = foreign_key
+                .referenced_columns(database)?
+                .map(ColumnLike::column_name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let constraint = foreign_key
+                .foreign_key_name()
+                .map_or_else(String::new, |name| format!("CONSTRAINT {name} "));
+            reporter.foreign_key(
+                foreign_key,
+                format!(
+                    "Extension foreign key from {host} ({host_columns}) to {referenced} ({referenced_columns}) has no ON DELETE CASCADE."
                 ),
-            };
-
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("ExtensionForeignKeyOnDeleteCascade")
-                .unwrap()
-                .object(fk_name.clone())
-                .unwrap()
-                .message(format!(
-                    "Extension foreign key '{}' in table '{}' must have ON DELETE CASCADE",
-                    fk_name,
-                    host_table.table_name()
-                ))
-                .unwrap()
-                .resolution(
-                    "Add ON DELETE CASCADE to the extension foreign key definition".to_string(),
-                )
-                .unwrap()
-                .try_into()
-                .unwrap();
-            return Err(crate::error::Error::ForeignKey(
-                Box::new(foreign_key.clone()),
-                error.into(),
-            ));
+                format!(
+                    "Declare it as `{constraint}FOREIGN KEY ({host_columns}) REFERENCES {referenced} ({referenced_columns}) ON DELETE CASCADE`."
+                ),
+            )?;
         }
         Ok(())
     }

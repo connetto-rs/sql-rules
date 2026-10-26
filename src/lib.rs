@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 pub mod error;
+pub mod lint;
 pub mod rules;
 pub mod traits;
 
@@ -8,5 +9,10 @@ pub mod traits;
 pub mod prelude {
     pub use sql_traits::prelude::*;
 
-    pub use crate::{error::Error, rules::*, traits::*};
+    pub use crate::{
+        error::{Error, Interruption, Location, Violation},
+        lint::{Level, LintGroup, Rule, RuleMetadata},
+        rules::*,
+        traits::*,
+    };
 }

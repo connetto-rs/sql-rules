@@ -4,9 +4,10 @@
 use sql_traits::traits::{DatabaseLike, ForeignKeyLike};
 
 use crate::{
-    error::RuleErrorInfo,
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
     rules::rust_keywords::is_rust_keyword,
-    traits::{Constrainer, ForeignKeyRule, GenericConstrainer},
+    traits::{Constrainer, ForeignKeyRule, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that foreign key names are not
@@ -45,34 +46,35 @@ impl<DB: DatabaseLike + 'static> From<NoRustKeywordForeignKeyName<DB>> for Gener
     }
 }
 
+impl<DB> Rule for NoRustKeywordForeignKeyName<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoRustKeywordForeignKeyName",
+            group: LintGroup::Restriction,
+            rationale: "Code generated from the schema cannot name a Rust item after a keyword without a raw identifier.",
+            source: Some("https://doc.rust-lang.org/reference/keywords.html"),
+        };
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> ForeignKeyRule for NoRustKeywordForeignKeyName<DB> {
     type Database = DB;
 
-    fn validate_foreign_key(
+    fn check_foreign_key(
         &self,
         _database: &Self::Database,
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         if let Some(name) = foreign_key.foreign_key_name()
             && is_rust_keyword(name)
         {
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("NoRustKeywordForeignKeyName")
-                .unwrap()
-                .object(name.to_owned())
-                .unwrap()
-                .message(format!("Foreign key name '{name}' is a Rust keyword."))
-                .unwrap()
-                .resolution(format!(
-                    "Rename the foreign key '{name}' to something that is not a Rust keyword."
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            return Err(crate::error::Error::ForeignKey(
-                Box::new(foreign_key.clone()),
-                error.into(),
-            ));
+            reporter.foreign_key(
+                foreign_key,
+                format!("Foreign key name '{name}' is a Rust keyword."),
+                format!("Rename the foreign key '{name}' to a name that is not a Rust keyword."),
+            )?;
         }
         Ok(())
     }

@@ -5,8 +5,9 @@
 use sql_traits::traits::{ColumnLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{ColumnRule, Constrainer, GenericConstrainer},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{ColumnRule, Constrainer, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that if a table is not a root
@@ -79,14 +80,27 @@ impl<DB: DatabaseLike + 'static> From<NoSurrogatePrimaryKeyInExtension<DB>>
     }
 }
 
+impl<DB> Rule for NoSurrogatePrimaryKeyInExtension<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoSurrogatePrimaryKeyInExtension",
+            group: LintGroup::Correctness,
+            rationale: "An extension row shares its parent's primary key, so a generated or defaulted key cannot hold the parent's value.",
+            source: None,
+        };
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> ColumnRule for NoSurrogatePrimaryKeyInExtension<DB> {
     type Database = DB;
 
-    fn validate_column(
+    fn check_column(
         &self,
         database: &Self::Database,
         column: &<Self::Database as DatabaseLike>::Column,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         if !column.is_primary_key(database)? {
             return Ok(());
         }
@@ -104,25 +118,15 @@ impl<DB: DatabaseLike> ColumnRule for NoSurrogatePrimaryKeyInExtension<DB> {
             (false, true) => "defines a DEFAULT value",
             (false, false) => return Ok(()),
         };
-
-        let error: RuleErrorInfo = RuleErrorInfo::builder()
-            .rule("NoSurrogatePrimaryKeyInExtension")
-            .unwrap()
-            .object(format!("{table_name}.{column_name}"))
-            .unwrap()
-            .message(format!(
-                "Primary-key column '{table_name}.{column_name}' belongs to an extension table and {surrogate_reason}"
-            ))
-            .unwrap()
-            .resolution(format!(
-                "Use a non-surrogate primary key for '{table_name}.{column_name}' by removing SERIAL/AUTOINCREMENT/DEFAULT and reusing the inherited key value"
-            ))
-            .unwrap()
-            .try_into()
-            .unwrap();
-        Err(crate::error::Error::Column(
-            Box::new(column.clone()),
-            error.into(),
-        ))
+        reporter.column(
+            column,
+            format!(
+                "Primary-key column '{table_name}.{column_name}' belongs to an extension table and {surrogate_reason}."
+            ),
+            format!(
+                "Use a non-surrogate primary key for '{table_name}.{column_name}' by removing SERIAL/AUTOINCREMENT/DEFAULT and reusing the inherited key value."
+            ),
+        )?;
+        Ok(())
     }
 }
