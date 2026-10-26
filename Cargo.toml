@@ -15,13 +15,11 @@ sql-traits = { git = "https://github.com/connetto-rs/sql-traits", branch = "main
 inflection-rs = {git = "https://github.com/LucaCappelletti94/inflection-rs", branch = "main"}
 thiserror = "2.0"
 heck = "0.5"
-
-[dev-dependencies]
-sqlparser = { git = "https://github.com/apache/datafusion-sqlparser-rs", branch = "main" }
+sqlparser = { git = "https://github.com/apache/datafusion-sqlparser-rs", branch = "main", features = ["visitor"] }
 
 # sql-traits requires `sqlparser` from crates.io and patches it to Apache main
 # in its own workspace only, so this crate repeats the patch to build a single
-# parser shared with the development dependency.
+# parser shared with its own dependency.
 [patch.crates-io]
 sqlparser = { git = "https://github.com/apache/datafusion-sqlparser-rs", branch = "main" }
 

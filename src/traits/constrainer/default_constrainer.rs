@@ -7,16 +7,16 @@ use crate::{
     lint::Level,
     rules::{
         CompatibleForeignKey, ExtensionForeignKeyOnDeleteCascade, HasPrimaryKey,
-        LowercaseColumnName, LowercaseForeignKeyName, LowercaseTableName,
+        LatentPolicyReadCycle, LowercaseColumnName, LowercaseForeignKeyName, LowercaseTableName,
         NoForbiddenColumnInExtension, NoNegationCheckRule, NoRustKeywordColumnName,
         NoRustKeywordForeignKeyName, NoRustKeywordTableName, NoSurrogatePrimaryKeyInExtension,
         NoTautologicalCheckRule, NonCompositePrimaryKeyNamedId, NonEmptyTextualColumnRule,
         NonRedundantExtensionDag, PastTimeColumnRule, PluralTableName,
-        PoliciesRequireRowLevelSecurity, PrimaryKeyReferenceEndsWithId, SingularColumnName,
-        SnakeCaseColumnName, SnakeCaseTableName, TextualColumnRule, UniqueCheckRule,
-        UniqueColumnNamesInExtensionGraph, UniqueForeignKey, UniqueUniqueIndex,
+        PoliciesRequireRowLevelSecurity, PolicyReadCycle, PrimaryKeyReferenceEndsWithId,
+        SingularColumnName, SnakeCaseColumnName, SnakeCaseTableName, TextualColumnRule,
+        UniqueCheckRule, UniqueColumnNamesInExtensionGraph, UniqueForeignKey, UniqueUniqueIndex,
     },
-    traits::{ColumnRule, Constrainer, ForeignKeyRule, GenericConstrainer, TableRule},
+    traits::{ColumnRule, Constrainer, ForeignKeyRule, GenericConstrainer, SchemaRule, TableRule},
 };
 
 /// A constrainer holding every generic rule at its group's default level.
@@ -91,6 +91,13 @@ impl<DB: DatabaseLike + 'static> Default for DefaultConstrainer<DB> {
         ];
         for rule in foreign_key_rules {
             constrainer.register_foreign_key_rule_with_floor(rule, Level::Allow);
+        }
+        let schema_rules: [Box<dyn SchemaRule<Database = DB>>; 2] = [
+            Box::new(PolicyReadCycle::default()),
+            Box::new(LatentPolicyReadCycle::default()),
+        ];
+        for rule in schema_rules {
+            constrainer.register_schema_rule_with_floor(rule, Level::Allow);
         }
         Self { constrainer }
     }

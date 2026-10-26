@@ -17,7 +17,7 @@ fn violations<C: Constrainer<Database = ParserDB>>(
         .into_iter()
         .map(|error| match error {
             Error::Violation(violation) => *violation,
-            Error::Lookup(error) => panic!("unexpected lookup failure: {error}"),
+            other => panic!("unexpected failure: {other}"),
         })
         .collect()
 }
@@ -290,7 +290,7 @@ fn a_lookup_failure_is_reported_and_independent_checks_continue() {
         .iter()
         .filter_map(|error| match error {
             Error::Violation(violation) => Some(violation.object()),
-            Error::Lookup(_) => None,
+            Error::Lookup(_) | Error::UnusedAllowance(_) => None,
         })
         .collect();
     flagged.sort_unstable();
