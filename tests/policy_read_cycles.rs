@@ -297,21 +297,73 @@ fn a_cycle_reached_by_several_roles_is_reported_once() {
 }
 
 #[test]
-fn a_policy_for_the_creating_role_still_recurses() {
-    let database = parse(
-        "CREATE TABLE memberships (owner_id INT, member_id TEXT);
-         ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
-         CREATE POLICY admins ON memberships FOR SELECT TO CURRENT_USER USING (
-           owner_id IN (SELECT owner_id FROM memberships m WHERE m.member_id = current_user));",
-    );
+fn a_policy_for_a_session_principal_still_recurses() {
+    for principal in ["CURRENT_USER", "CURRENT_ROLE", "SESSION_USER"] {
+        let database = parse(&format!(
+            "CREATE TABLE memberships (owner_id INT, member_id TEXT);
+             ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
+             CREATE POLICY admins ON memberships FOR SELECT TO {principal} USING (
+               owner_id IN (SELECT owner_id FROM memberships m WHERE m.member_id = current_user));"
+        ));
+        assert_eq!(
+            cycles(&cycle_rules(), &database),
+            [(
+                "PolicyReadCycle".to_owned(),
+                Level::Deny,
+                vec!["memberships.admins".to_owned()]
+            )],
+            "{principal}"
+        );
+    }
+}
+
+#[test]
+fn a_role_reaching_both_roles_through_shared_ancestry_makes_the_cycle_denied() {
+    let database = parse(&format!(
+        "{DISJOINT_ROLES} CREATE ROLE staff IN ROLE p1_admin, p1_reader;
+         CREATE ROLE lead IN ROLE staff, p1_admin;"
+    ));
+    let found = cycles(&cycle_rules(), &database);
+    assert_eq!(found.len(), 1);
     assert_eq!(
-        cycles(&cycle_rules(), &database),
-        [(
-            "PolicyReadCycle".to_owned(),
-            Level::Deny,
-            vec!["memberships.admins".to_owned()]
-        )]
+        (found[0].0.as_str(), found[0].1),
+        ("PolicyReadCycle", Level::Deny)
     );
+}
+
+#[test]
+fn a_latent_cycle_lists_each_role_set_once() {
+    let database = parse(
+        "CREATE ROLE admin;
+         CREATE ROLE reader;
+         CREATE TABLE a (id INT);
+         CREATE TABLE b (id INT);
+         CREATE TABLE c (id INT);
+         ALTER TABLE a ENABLE ROW LEVEL SECURITY;
+         ALTER TABLE b ENABLE ROW LEVEL SECURITY;
+         ALTER TABLE c ENABLE ROW LEVEL SECURITY;
+         CREATE POLICY a_admin ON a FOR SELECT TO admin USING (id IN (SELECT id FROM b));
+         CREATE POLICY b_admin ON b FOR SELECT TO admin USING (id IN (SELECT id FROM c));
+         CREATE POLICY c_reader ON c FOR SELECT TO reader USING (id IN (SELECT id FROM a));",
+    );
+    let diagnostics = cycle_rules().diagnostics(&database);
+    let [Error::Violation(violation)] = diagnostics.as_slice() else {
+        panic!("expected one latent cycle, got {}", diagnostics.len());
+    };
+    assert!(violation.message().contains("holding admin and reader,"));
+}
+
+#[test]
+fn a_read_the_schema_cannot_resolve_is_a_lookup_failure() {
+    let database = parse(
+        "CREATE TABLE docs (id INT);
+         ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
+         CREATE POLICY p ON docs FOR SELECT USING (id IN (SELECT id FROM a.b.c.members));",
+    );
+    assert!(matches!(
+        cycle_rules().validate_schema(&database),
+        Err(Error::Lookup(_))
+    ));
 }
 
 #[test]
@@ -383,6 +435,11 @@ fn a_cycle_names_the_clause_and_subquery_of_each_policy() {
             (PolicyClause::Using, "SELECT 1 FROM t WHERE t.team = u.team"),
         ]
     );
+    assert!(
+        violation
+            .to_string()
+            .contains("at t.t_ins WITH CHECK: SELECT 1 FROM u")
+    );
 }
 
 #[test]
@@ -410,4 +467,20 @@ fn a_rendered_cycle_names_each_policy_clause_and_subquery() {
     assert!(error.to_string().contains(
         "at memberships.memberships_admin USING: SELECT 1 FROM memberships m WHERE m.owner_id = memberships.owner_id"
     ));
+}
+
+#[test]
+fn a_clause_reading_a_table_twice_lists_its_policy_once() {
+    let database = parse(
+        "CREATE TABLE members (id INT, owner INT);
+         CREATE TABLE owners (id INT);
+         ALTER TABLE members ENABLE ROW LEVEL SECURITY;
+         ALTER TABLE owners ENABLE ROW LEVEL SECURITY;
+         CREATE POLICY read_members ON members FOR SELECT USING (
+           owner IN (SELECT id FROM owners) OR id IN (SELECT id FROM owners));
+         CREATE POLICY read_owners ON owners FOR SELECT USING (id IN (SELECT owner FROM members));",
+    );
+    let found = cycles(&cycle_rules(), &database);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].2.len(), 2);
 }

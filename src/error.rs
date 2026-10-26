@@ -76,6 +76,17 @@ impl<DB: DatabaseLike> PolicySite<DB> {
     }
 }
 
+impl<DB: DatabaseLike> Display for PolicySite<DB> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (table, policy) = (self.table.table_name(), self.policy.name());
+        write!(
+            formatter,
+            "{table}.{policy} {}: {}",
+            self.clause, self.expression
+        )
+    }
+}
+
 /// A reviewed exception excusing one rule's violations that list a policy.
 #[derive(Debug, Clone)]
 pub struct PolicyAllowance {
@@ -167,27 +178,25 @@ impl<DB: DatabaseLike> Violation<DB> {
 
 impl<DB: DatabaseLike> Display for Violation<DB> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{} [{}::{}] {}: {}\n  why: {}\n  fix: {}",
-            self.level,
-            self.rule.group,
-            self.rule.name,
-            self.object,
-            self.message,
-            self.rule.rationale,
-            self.resolution,
-        )?;
+        let Self {
+            rule,
+            level,
+            object,
+            message,
+            resolution,
+            ..
+        } = self;
+        let RuleMetadata {
+            name,
+            group,
+            rationale,
+            ..
+        } = rule;
+        write!(formatter, "{level} [{group}::{name}] {object}: {message}")?;
+        write!(formatter, "\n  why: {rationale}\n  fix: {resolution}")?;
         if let Location::Policies(sites) = &self.location {
             for site in sites {
-                write!(
-                    formatter,
-                    "\n  at {}.{} {}: {}",
-                    site.table.table_name(),
-                    site.policy.name(),
-                    site.clause,
-                    site.expression
-                )?;
+                write!(formatter, "\n  at {site}")?;
             }
         }
         if let Some(source) = self.rule.source {

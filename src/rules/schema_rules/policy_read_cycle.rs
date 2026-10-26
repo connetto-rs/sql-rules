@@ -58,38 +58,33 @@ struct SublinkReads<'db, DB: DatabaseLike> {
     depth: usize,
     found: bool,
     reads: Vec<Read<'db, DB>>,
-    error: Option<LookupError>,
 }
 
 impl<DB: DatabaseLike> Visitor for SublinkReads<'_, DB> {
-    type Break = ();
+    type Break = LookupError;
 
-    fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<()> {
+    fn pre_visit_query(&mut self, query: &Query) -> ControlFlow<LookupError> {
         self.depth += 1;
         if self.depth > 1 {
             return ControlFlow::Continue(());
         }
         self.found = true;
-        match DataStatementLike::<DB>::referenced_tables(query, self.database) {
-            Ok(tables) => {
-                for table in tables {
-                    if !self.reads.iter().any(|read| read.table == table) {
-                        self.reads.push(Read {
-                            table,
-                            subquery: query.to_string(),
-                        });
-                    }
-                }
-                ControlFlow::Continue(())
-            }
-            Err(error) => {
-                self.error = Some(error);
-                ControlFlow::Break(())
+        let tables = match DataStatementLike::<DB>::referenced_tables(query, self.database) {
+            Ok(tables) => tables,
+            Err(error) => return ControlFlow::Break(error),
+        };
+        for table in tables {
+            if !self.reads.iter().any(|read| read.table == table) {
+                self.reads.push(Read {
+                    table,
+                    subquery: query.to_string(),
+                });
             }
         }
+        ControlFlow::Continue(())
     }
 
-    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<()> {
+    fn post_visit_query(&mut self, _query: &Query) -> ControlFlow<LookupError> {
         self.depth -= 1;
         ControlFlow::Continue(())
     }
@@ -108,13 +103,11 @@ fn sublink_reads<'db, DB: DatabaseLike>(
         depth: 0,
         found: false,
         reads: Vec::new(),
-        error: None,
     };
-    let _ = expression.visit(&mut collector);
-    match collector.error {
-        Some(error) => Err(error),
-        None => Ok((collector.found, collector.reads)),
+    if let ControlFlow::Break(error) = expression.visit(&mut collector) {
+        return Err(error);
     }
+    Ok((collector.found, collector.reads))
 }
 
 /// What the expansion of one policy depends on.
