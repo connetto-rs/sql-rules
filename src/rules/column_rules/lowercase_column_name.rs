@@ -4,8 +4,9 @@
 use sql_traits::traits::{ColumnLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{ColumnRule, Constrainer, GenericConstrainer},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{ColumnRule, Constrainer, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that column names are lowercase.
@@ -43,44 +44,44 @@ impl<DB: DatabaseLike + 'static> From<LowercaseColumnName<DB>> for GenericConstr
     }
 }
 
+impl<DB> Rule for LowercaseColumnName<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "LowercaseColumnName",
+            LintGroup::Style,
+            "PostgreSQL folds unquoted identifiers to lower case, so a mixed-case name has to be quoted in every query.",
+            Some(
+                "https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS",
+            ),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> ColumnRule for LowercaseColumnName<DB> {
     type Database = DB;
 
-    fn validate_column(
+    fn check_column(
         &self,
         database: &Self::Database,
         column: &<Self::Database as DatabaseLike>::Column,
-    ) -> Result<(), crate::error::Error<Self::Database>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         if column
             .column_name()
             .chars()
             .all(|c| !c.is_alphabetic() || c.is_lowercase())
         {
-            Ok(())
-        } else {
-            let table = column.table(database);
-            let table_name = table.table_name();
-            let column_name = column.column_name();
-
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("LowercaseColumnName")
-                .unwrap()
-                .object(format!("{table_name}.{column_name}"))
-                .unwrap()
-                .message(format!(
-                    "Column '{column_name}' in table '{table_name}' is not lowercase"
-                ))
-                .unwrap()
-                .resolution(format!(
-                    "Rename column '{column_name}' in table '{table_name}' to be all lowercase"
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            Err(crate::error::Error::Column(
-                Box::new(column.clone()),
-                error.into(),
-            ))
+            return Ok(());
         }
+
+        let table_name = column.table(database).table_name();
+        let column_name = column.column_name();
+        reporter.column(
+            column,
+            format!("Column '{column_name}' in table '{table_name}' is not lowercase"),
+            format!("Rename column '{column_name}' in table '{table_name}' to be all lowercase"),
+        )?;
+        Ok(())
     }
 }

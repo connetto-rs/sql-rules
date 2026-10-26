@@ -1,15 +1,17 @@
-//! Submodule providing the `UniqueCheckConstraint` constraint, which enforces
+//! Submodule providing the `UniqueCheckRule` constraint, which enforces
 //! that check constraints are unique per table, meaning that no two check
 //! constraints have the same clause in a single table.
 
 use sql_traits::traits::{CheckConstraintLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
-/// Struct defining a constraint that enforces that table names are lowercase.
+/// Struct defining a constraint that enforces that check constraints are
+/// unique per table.
 ///
 /// # Example
 ///
@@ -47,36 +49,42 @@ impl<DB: DatabaseLike + 'static> From<UniqueCheckRule<DB>> for GenericConstraine
     }
 }
 
+impl<DB> Rule for UniqueCheckRule<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "UniqueCheckRule",
+            LintGroup::Complexity,
+            "A duplicated check constraint enforces nothing more and is evaluated again on every write.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for UniqueCheckRule<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let mut constraints = table.check_constraints(database)?.collect::<Vec<_>>();
         constraints.sort_unstable_by_key(|c| c.expression(database));
         for window in constraints.windows(2) {
             if window[0].expression(database) == window[1].expression(database) {
-                let error: RuleErrorInfo = RuleErrorInfo::builder()
-                    .rule("UniqueCheckConstraint")
-                    .unwrap()
-                    .object(table.table_name().to_owned())
-                    .unwrap()
-                    .message(format!(
-                        "Table '{}' has non-unique check constraints",
-                        table.table_name()
-                    ))
-                    .unwrap()
-                    .resolution("Ensure all check constraints in the table are unique".to_string())
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                return Err(crate::error::Error::Table(
-                    Box::new(table.clone()),
-                    error.into(),
-                ));
+                let table_name = table.table_name();
+                let expression = window[0].expression(database).to_string();
+                reporter.table(
+                    table,
+                    format!(
+                        "Table '{table_name}' has the duplicate check constraint CHECK ({expression})."
+                    ),
+                    format!(
+                        "Remove one of the duplicate check constraints CHECK ({expression}) from table '{table_name}'."
+                    ),
+                )?;
             }
         }
         Ok(())

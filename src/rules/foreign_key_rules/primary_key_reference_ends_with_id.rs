@@ -8,8 +8,9 @@ use sql_traits::{
 };
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, ForeignKeyRule, GenericConstrainer},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, ForeignKeyRule, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that foreign key host columns
@@ -93,6 +94,18 @@ impl<DB: DatabaseLike + 'static> From<PrimaryKeyReferenceEndsWithId<DB>>
     }
 }
 
+impl<C> Rule for PrimaryKeyReferenceEndsWithId<C> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "PrimaryKeyReferenceEndsWithId",
+            LintGroup::Style,
+            "Ending every column that references a primary key in `_id` shows at a glance which columns are references.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> PrimaryKeyReferenceEndsWithId<DB> {
     /// Returns whether `column` of `table` is the host column of a foreign key
     /// whose referenced columns include a primary key column.
@@ -122,11 +135,12 @@ impl<DB: DatabaseLike> PrimaryKeyReferenceEndsWithId<DB> {
 impl<DB: DatabaseLike> ForeignKeyRule for PrimaryKeyReferenceEndsWithId<DB> {
     type Database = DB;
 
-    fn validate_foreign_key(
+    fn check_foreign_key(
         &self,
         database: &Self::Database,
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
-    ) -> Result<(), crate::prelude::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let host_table = foreign_key.host_table(database);
         let referenced_table = foreign_key.referenced_table(database)?;
 
@@ -144,37 +158,22 @@ impl<DB: DatabaseLike> ForeignKeyRule for PrimaryKeyReferenceEndsWithId<DB> {
                 )?;
 
             if references_primary_key && !host_column.column_name().ends_with("id") {
-                let error: RuleErrorInfo = RuleErrorInfo::builder()
-                    .rule("PrimaryKeyReferenceEndsWithId")
-                    .unwrap()
-                    .object(
-                        foreign_key
-                            .foreign_key_name()
-                            .unwrap_or("Unnamed foreign key")
-                            .to_owned(),
-                    )
-                    .unwrap()
-                    .message(format!(
-                        "Foreign key host column '{}.{}' references a primary key column '{}.{}' but does not end with 'id'",
+                reporter.foreign_key(
+                    foreign_key,
+                    format!(
+                        "Foreign key host column '{}.{}' references primary key column '{}.{}' but does not end with 'id'.",
                         host_table.table_name(),
                         host_column.column_name(),
                         referenced_table.table_name(),
-                        referenced_column.column_name(),
-                    ))
-                    .unwrap()
-                    .resolution(format!(
-                        "Rename column '{}.{}' to end with 'id' (e.g., '{}_id')",
+                        referenced_column.column_name()
+                    ),
+                    format!(
+                        "Rename column '{}.{}' to '{}_id'.",
                         host_table.table_name(),
                         host_column.column_name(),
-                        host_column.column_name(),
-                    ))
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                return Err(crate::error::Error::ForeignKey(
-                    Box::new(foreign_key.clone()),
-                    error.into(),
-                ));
+                        host_column.column_name()
+                    ),
+                )?;
             }
         }
 

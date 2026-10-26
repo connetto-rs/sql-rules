@@ -1,12 +1,14 @@
 //! Submodule providing the `SnakeCaseTableName` constraint, which enforces that
 //! table names follow `snake_case` style.
 
-use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
-};
 use heck::ToSnakeCase;
 use sql_traits::traits::{DatabaseLike, TableLike};
+
+use crate::{
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
+};
 
 /// Struct defining a constraint that enforces that table names follow
 /// `snake_case` style.
@@ -60,21 +62,33 @@ impl<DB: DatabaseLike + 'static> From<SnakeCaseTableName<DB>> for GenericConstra
     }
 }
 
+impl<DB> Rule for SnakeCaseTableName<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "SnakeCaseTableName",
+            LintGroup::Style,
+            "Snake case keeps multi-word names readable after PostgreSQL folds unquoted identifiers to lower case.",
+            Some(
+                "https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS",
+            ),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for SnakeCaseTableName<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         _database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let table_name = table.table_name();
         let expected_name = table_name.to_snake_case();
 
-        // Check if the name matches its snake_case conversion
-        if expected_name == table_name {
-            Ok(())
-        } else {
+        if expected_name != table_name {
             let issue = if table_name.contains("__") {
                 "contains double underscores"
             } else if table_name.chars().any(|c| c.is_ascii_uppercase()) {
@@ -84,26 +98,12 @@ impl<DB: DatabaseLike> TableRule for SnakeCaseTableName<DB> {
             } else {
                 "is not valid snake_case"
             };
-
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("SnakeCaseTableName")
-                .unwrap()
-                .object(table_name.to_owned())
-                .unwrap()
-                .message(format!(
-                    "Table '{table_name}' violates snake_case naming convention: {issue}"
-                ))
-                .unwrap()
-                .resolution(format!(
-                    "Change '{table_name}' to '{expected_name}' (use lowercase letters and single underscores only)"
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ))
+            reporter.table(
+                table,
+                format!("Table '{table_name}' {issue}."),
+                format!("Rename the table to '{expected_name}'."),
+            )?;
         }
+        Ok(())
     }
 }

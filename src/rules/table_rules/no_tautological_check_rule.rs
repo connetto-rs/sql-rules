@@ -5,8 +5,9 @@
 use sql_traits::traits::{CheckConstraintLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that tables do not have
@@ -69,42 +70,43 @@ impl<DB: DatabaseLike + 'static> From<NoTautologicalCheckRule<DB>> for GenericCo
     }
 }
 
+impl<DB> Rule for NoTautologicalCheckRule<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "NoTautologicalCheckRule",
+            LintGroup::Correctness,
+            "A check that every row satisfies constrains nothing, so the condition it was meant to enforce is missing.",
+            Some("https://www.postgresql.org/docs/current/sql-createtable.html"),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for NoTautologicalCheckRule<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         // Check if any check constraint is tautological
         for check_constraint in table.check_constraints(database)? {
             if check_constraint.is_tautology(database)? {
                 let table_name = table.table_name();
-                let tautological_constraint = check_constraint.expression(database).to_string();
-
-                let error: RuleErrorInfo = RuleErrorInfo::builder()
-                    .rule("NoTautologicalCheckRule")
-                    .unwrap()
-                    .object(table_name.to_owned())
-                    .unwrap()
-                    .message(format!(
-                        "Table '{table_name}' has a tautological check constraint: CHECK ({tautological_constraint})"
-                    ))
-                    .unwrap()
-                    .resolution(format!(
-                        "Remove the tautological check constraint 'CHECK ({tautological_constraint})' from table '{table_name}'"
-                    ))
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                return Err(crate::error::Error::Table(
-                    Box::new(table.clone()),
-                    error.into(),
-                ));
+                let expression = check_constraint.expression(database).to_string();
+                reporter.table(
+                    table,
+                    format!(
+                        "Table '{table_name}' has a tautological check constraint CHECK ({expression})."
+                    ),
+                    format!(
+                        "Remove the check constraint CHECK ({expression}) from table '{table_name}'."
+                    ),
+                )?;
             }
         }
-
         Ok(())
     }
 }

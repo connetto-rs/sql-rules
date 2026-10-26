@@ -5,8 +5,9 @@
 use sql_traits::traits::{ColumnLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{ColumnRule, Constrainer, GenericConstrainer},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{ColumnRule, Constrainer, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that if a column is a
@@ -56,54 +57,50 @@ impl<DB: DatabaseLike + 'static> From<NonCompositePrimaryKeyNamedId<DB>>
     }
 }
 
+impl<DB> Rule for NonCompositePrimaryKeyNamedId<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "NonCompositePrimaryKeyNamedId",
+            LintGroup::Style,
+            "Naming every single-column primary key `id` lets references and generated code find it without a lookup.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> ColumnRule for NonCompositePrimaryKeyNamedId<DB> {
     type Database = DB;
 
-    fn validate_column(
+    fn check_column(
         &self,
         database: &Self::Database,
         column: &<Self::Database as DatabaseLike>::Column,
-    ) -> Result<(), crate::error::Error<Self::Database>> {
-        // Check if this column is a primary key
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         if !column.is_primary_key(database)? {
             return Ok(());
         }
 
-        // Get the table to check if it has a composite primary key
         let table = column.table(database);
         let pk_columns: Vec<_> = table.primary_key_columns(database)?.collect();
 
-        // If the primary key is composite, the constraint doesn't apply
-        if pk_columns.len() > 1 {
+        // The rule only applies to single-column primary keys.
+        if pk_columns.len() > 1 || column.column_name() == "id" {
             return Ok(());
         }
 
-        // Single primary key column must be named "id"
-        if column.column_name() == "id" {
-            Ok(())
-        } else {
-            let column_name = column.column_name();
-            let table_name = table.table_name();
-
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("NonCompositePrimaryKeyNamedId")
-                .unwrap()
-                .object(format!("{table_name}.{column_name}"))
-                .unwrap()
-                .message(format!(
-                    "Column '{column_name}' in table '{table_name}' is a non-composite primary key but is not named 'id'"
-                ))
-                .unwrap()
-                .resolution(format!(
-                    "Rename the primary key column '{column_name}' to 'id' in table '{table_name}'"
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            Err(crate::error::Error::Column(
-                Box::new(column.clone()),
-                error.into(),
-            ))
-        }
+        let column_name = column.column_name();
+        let table_name = table.table_name();
+        reporter.column(
+            column,
+            format!(
+                "Column '{column_name}' in table '{table_name}' is a non-composite primary key but is not named 'id'."
+            ),
+            format!(
+                "Rename the primary key column '{column_name}' to 'id' in table '{table_name}'."
+            ),
+        )?;
+        Ok(())
     }
 }

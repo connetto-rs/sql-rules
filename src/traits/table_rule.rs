@@ -1,24 +1,26 @@
-//! Submodule defining the `TableRule` trait, which defines a rule
-//! which applies to an object that implements the `ConstrainableTable` trait.
+//! Submodule defining the `TableRule` trait, which defines a rule applied to
+//! each table of a schema.
 
 use sql_traits::traits::DatabaseLike;
 
-use crate::error::Error;
+use crate::{error::Interruption, lint::Rule, traits::Reporter};
 
 /// Trait for types that define a table rule object.
-pub trait TableRule {
+pub trait TableRule: Rule {
     /// The database type that this rule applies to.
     type Database: DatabaseLike;
 
-    /// Validates that the given table satisfies the rule.
+    /// Reports every violation of this rule on the given table.
     ///
     /// # Errors
     ///
-    /// Returns an error if the table violates this rule, or
-    /// [`Error::Lookup`] if a schema object the rule reads cannot be resolved.
-    fn validate_table(
+    /// Returns [`Interruption::Lookup`] when a schema object the rule reads
+    /// cannot be resolved, and [`Interruption::Halted`] when the reporter
+    /// needs no further violations.
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), Error<Self::Database>>;
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption>;
 }

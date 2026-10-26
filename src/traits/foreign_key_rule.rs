@@ -1,25 +1,26 @@
-//! Submodule defining the `ForeignKeyRule` trait, which defines a
-//! rule which applies to an object that implements the `ForeignKeyLike`
-//! trait.
+//! Submodule defining the `ForeignKeyRule` trait, which defines a rule applied
+//! to each foreign key of a schema.
 
 use sql_traits::traits::DatabaseLike;
 
-use crate::error::Error;
+use crate::{error::Interruption, lint::Rule, traits::Reporter};
 
 /// Trait for types that define a foreign key rule object.
-pub trait ForeignKeyRule {
+pub trait ForeignKeyRule: Rule {
     /// The database type that this rule applies to.
     type Database: DatabaseLike;
 
-    /// Validates that the given foreign key satisfies the rule.
+    /// Reports every violation of this rule on the given foreign key.
     ///
     /// # Errors
     ///
-    /// Returns an error if the foreign key violates this rule, or
-    /// [`Error::Lookup`] if a schema object the rule reads cannot be resolved.
-    fn validate_foreign_key(
+    /// Returns [`Interruption::Lookup`] when a schema object the rule reads
+    /// cannot be resolved, and [`Interruption::Halted`] when the reporter
+    /// needs no further violations.
+    fn check_foreign_key(
         &self,
         database: &Self::Database,
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
-    ) -> Result<(), Error<Self::Database>>;
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption>;
 }

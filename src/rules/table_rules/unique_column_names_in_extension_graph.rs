@@ -9,8 +9,9 @@ use sql_traits::{
 };
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that column names are unique
@@ -118,6 +119,18 @@ impl<DB: DatabaseLike + 'static> From<UniqueColumnNamesInExtensionGraph<DB>>
     }
 }
 
+impl<DB> Rule for UniqueColumnNamesInExtensionGraph<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "UniqueColumnNamesInExtensionGraph",
+            LintGroup::Suspicious,
+            "A column name repeated across an extension hierarchy makes the merged row ambiguous.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> UniqueColumnNamesInExtensionGraph<DB> {
     /// Helper method to find duplicate column names in the extension graph
     fn find_duplicate_columns(
@@ -134,7 +147,7 @@ impl<DB: DatabaseLike> UniqueColumnNamesInExtensionGraph<DB> {
         }
 
         let mut extended_column_names: HashSet<String> = HashSet::new();
-        let mut tables_to_check = extended_tables.clone();
+        let mut tables_to_check = extended_tables;
         let mut checked_tables: HashSet<String> = HashSet::new();
 
         while let Some(extended_table) = tables_to_check.pop() {
@@ -143,7 +156,6 @@ impl<DB: DatabaseLike> UniqueColumnNamesInExtensionGraph<DB> {
                 continue;
             }
             checked_tables.insert(table_name);
-
             for column in extended_table.columns(database)? {
                 extended_column_names.insert(column.column_name().to_string());
             }
@@ -173,42 +185,33 @@ impl<DB: DatabaseLike> UniqueColumnNamesInExtensionGraph<DB> {
 impl<DB: DatabaseLike> TableRule for UniqueColumnNamesInExtensionGraph<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         // Check if any column in the current table conflicts with extended tables
         let duplicates = Self::find_duplicate_columns(database, table)?;
-
-        if !duplicates.is_empty() {
-            let duplicate_list = duplicates.join(", ");
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("UniqueColumnNamesInExtensionGraph")
-                .unwrap()
-                .object(table.table_name().to_owned())
-                .unwrap()
-                .message(format!(
-                    "Table '{}' has {} duplicate column name(s) that conflict with parent tables: {}",
-                    table.table_name(),
-                    duplicates.len(),
-                    duplicate_list
-                ))
-                .unwrap()
-                .resolution(format!(
-                    "Rename these columns in table '{}': [{}]. Each column must have a unique name across all parent tables in the extension hierarchy",
-                    table.table_name(),
-                    duplicate_list
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            return Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ));
+        if duplicates.is_empty() {
+            return Ok(());
         }
 
+        let table_name = table.table_name();
+        for column in table.columns(database)? {
+            let column_name = column.column_name();
+            if duplicates.iter().any(|name| name == column_name) {
+                reporter.column(
+                    column,
+                    format!(
+                        "Column '{column_name}' of table '{table_name}' conflicts with a column of the same name in the tables it extends."
+                    ),
+                    format!(
+                        "Rename the column '{column_name}' in table '{table_name}' so its name is unique across the extension hierarchy."
+                    ),
+                )?;
+            }
+        }
         Ok(())
     }
 }

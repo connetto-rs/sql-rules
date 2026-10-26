@@ -4,8 +4,9 @@
 use sql_traits::traits::{DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that tables have a primary key.
@@ -44,35 +45,37 @@ impl<DB: DatabaseLike + 'static> From<HasPrimaryKey<DB>> for GenericConstrainer<
     }
 }
 
+impl<DB> Rule for HasPrimaryKey<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "HasPrimaryKey",
+            LintGroup::Suspicious,
+            "A table without a primary key has no declared row identity, so other tables cannot reference its rows and clients cannot address one row.",
+            Some(
+                "https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-PRIMARY-KEYS",
+            ),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for HasPrimaryKey<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
-        if table.has_primary_key(database)? {
-            Ok(())
-        } else {
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("HasPrimaryKey")
-                .unwrap()
-                .object(table.table_name().to_owned())
-                .unwrap()
-                .message(format!(
-                    "Table '{}' does not have a primary key",
-                    table.table_name()
-                ))
-                .unwrap()
-                .resolution("Add a primary key to the table".to_string())
-                .unwrap()
-                .try_into()
-                .unwrap();
-            Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ))
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
+        if !table.has_primary_key(database)? {
+            let table_name = table.table_name();
+            reporter.table(
+                table,
+                format!("Table '{table_name}' does not have a primary key."),
+                format!("Add a primary key to the table '{table_name}'."),
+            )?;
         }
+        Ok(())
     }
 }

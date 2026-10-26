@@ -1,30 +1,26 @@
-//! Submodule defining the `ColumnRule` trait, which defines a rule
-//! which applies to an object that implements the `ConstrainableColumn` trait.
+//! Submodule defining the `ColumnRule` trait, which defines a rule applied to
+//! each column of a schema.
 
 use sql_traits::traits::DatabaseLike;
 
-use crate::error::Error;
+use crate::{error::Interruption, lint::Rule, traits::Reporter};
 
 /// Trait for types that define a column rule object.
-pub trait ColumnRule {
+pub trait ColumnRule: Rule {
     /// The database type that this rule applies to.
     type Database: DatabaseLike;
 
-    /// Validates that the given column satisfies the rule.
-    ///
-    /// # Arguments
-    ///
-    /// * `database` - A reference to the database instance to query additional
-    ///   column information from.
-    /// * `column` - The column to validate.
+    /// Reports every violation of this rule on the given column.
     ///
     /// # Errors
     ///
-    /// Returns an error if the column violates this rule, or
-    /// [`Error::Lookup`] if a schema object the rule reads cannot be resolved.
-    fn validate_column(
+    /// Returns [`Interruption::Lookup`] when a schema object the rule reads
+    /// cannot be resolved, and [`Interruption::Halted`] when the reporter
+    /// needs no further violations.
+    fn check_column(
         &self,
         database: &Self::Database,
         column: &<Self::Database as DatabaseLike>::Column,
-    ) -> Result<(), Error<Self::Database>>;
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption>;
 }

@@ -4,8 +4,9 @@
 use sql_traits::traits::{DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that table names are lowercase.
@@ -43,39 +44,40 @@ impl<DB: DatabaseLike + 'static> From<LowercaseTableName<DB>> for GenericConstra
     }
 }
 
+impl<DB> Rule for LowercaseTableName<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "LowercaseTableName",
+            LintGroup::Style,
+            "PostgreSQL folds unquoted identifiers to lower case, so a mixed-case name has to be quoted in every query.",
+            Some(
+                "https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS",
+            ),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for LowercaseTableName<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         _database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
-        if table
-            .table_name()
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
+        let table_name = table.table_name();
+        if table_name
             .chars()
-            .all(|c| !c.is_alphabetic() || c.is_lowercase())
+            .any(|c| c.is_alphabetic() && !c.is_lowercase())
         {
-            Ok(())
-        } else {
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("LowercaseTableName")
-                .unwrap()
-                .object(table.table_name().to_owned())
-                .unwrap()
-                .message(format!(
-                    "Table name '{}' is not lowercase",
-                    table.table_name()
-                ))
-                .unwrap()
-                .resolution("Rename the table to be all lowercase".to_string())
-                .unwrap()
-                .try_into()
-                .unwrap();
-            Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ))
+            reporter.table(
+                table,
+                format!("Table '{table_name}' is not lowercase."),
+                format!("Rename the table to '{}'.", table_name.to_lowercase()),
+            )?;
         }
+        Ok(())
     }
 }

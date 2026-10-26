@@ -5,8 +5,9 @@
 use sql_traits::traits::{ColumnLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that if a table extends other
@@ -116,14 +117,27 @@ impl<DB: DatabaseLike + 'static> From<NoForbiddenColumnInExtension<DB>> for Gene
     }
 }
 
+impl<DB> Rule for NoForbiddenColumnInExtension<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "NoForbiddenColumnInExtension",
+            LintGroup::Suspicious,
+            "The extension model keeps the configured column name for its own use, so a column with that name on an extending table collides with it.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for NoForbiddenColumnInExtension<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         // Check if the table extends other tables
         if !table.is_extension(database)? {
             // If the table doesn't extend any other table, the constraint doesn't apply
@@ -133,41 +147,26 @@ impl<DB: DatabaseLike> TableRule for NoForbiddenColumnInExtension<DB> {
         // Check if any column has the forbidden name (case-insensitive comparison)
         let forbidden_name_lower = self.forbidden_name.to_lowercase();
         for column in table.columns(database)? {
-            let column_name_lower = column.column_name().to_lowercase();
-            if column_name_lower == forbidden_name_lower {
+            if column.column_name().to_lowercase() == forbidden_name_lower {
                 let table_name = table.table_name();
+                let column_name = column.column_name();
                 let extended_table_names = table
                     .extended_tables(database)?
                     .map(TableLike::table_name)
                     .collect::<Vec<_>>();
-
-                let error: RuleErrorInfo = RuleErrorInfo::builder()
-                    .rule("NoForbiddenColumnInExtension")
-                    .unwrap()
-                    .object(table_name.to_owned())
-                    .unwrap()
-                    .message(format!(
-                        "Table '{}' extends {} ({}) but has a forbidden column named '{}'",
-                        table_name,
-                        if extended_table_names.len() == 1 { "table" } else { "tables" },
-                        extended_table_names.join(", "),
-                        self.forbidden_name
-                    ))
-                    .unwrap()
-                    .resolution(format!(
-                        "Rename or remove the '{}' column from table '{}' (extension tables should not define this column)",
-                        self.forbidden_name, table_name
-                    ))
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                return Err(crate::error::Error::Table(
-                    Box::new(table.clone()),
-                    error.into(),
-                ));
+                reporter.column(
+                    column,
+                    format!(
+                        "Table '{table_name}' extends {} ({}) but defines the forbidden column '{column_name}'.",
+                        if extended_table_names.len() == 1 { "the table" } else { "the tables" },
+                        extended_table_names.join(", ")
+                    ),
+                    format!(
+                        "Rename or remove the column '{column_name}' from table '{table_name}'."
+                    ),
+                )?;
             }
         }
-
         Ok(())
     }
 }

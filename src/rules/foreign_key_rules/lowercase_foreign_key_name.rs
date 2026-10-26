@@ -4,8 +4,9 @@
 use sql_traits::traits::{DatabaseLike, ForeignKeyLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, ForeignKeyRule, GenericConstrainer},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, ForeignKeyRule, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that foreign key names are
@@ -56,35 +57,37 @@ impl<DB: DatabaseLike + 'static> From<LowercaseForeignKeyName<DB>> for GenericCo
     }
 }
 
+impl<C> Rule for LowercaseForeignKeyName<C> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "LowercaseForeignKeyName",
+            LintGroup::Style,
+            "PostgreSQL folds unquoted identifiers to lower case, so a mixed-case name has to be quoted in every statement.",
+            Some(
+                "https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS",
+            ),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> ForeignKeyRule for LowercaseForeignKeyName<DB> {
     type Database = DB;
 
-    fn validate_foreign_key(
+    fn check_foreign_key(
         &self,
         _database: &Self::Database,
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
-    ) -> Result<(), crate::prelude::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         if let Some(name) = foreign_key.foreign_key_name()
             && name.chars().any(char::is_uppercase)
         {
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("LowercaseForeignKeyName")
-                .unwrap()
-                .object(foreign_key.foreign_key_name().unwrap().to_owned())
-                .unwrap()
-                .message(format!(
-                    "Foreign key name '{}' is not lowercase",
-                    foreign_key.foreign_key_name().unwrap()
-                ))
-                .unwrap()
-                .resolution("Rename the foreign key to be all lowercase".to_string())
-                .unwrap()
-                .try_into()
-                .unwrap();
-            return Err(crate::error::Error::ForeignKey(
-                Box::new(foreign_key.clone()),
-                error.into(),
-            ));
+            reporter.foreign_key(
+                foreign_key,
+                format!("Foreign key name '{name}' is not lowercase."),
+                format!("Rename the foreign key to '{}'.", name.to_lowercase()),
+            )?;
         }
         Ok(())
     }

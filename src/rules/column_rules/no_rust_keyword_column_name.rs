@@ -4,9 +4,10 @@
 use sql_traits::traits::{ColumnLike, DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
     rules::rust_keywords::is_rust_keyword,
-    traits::{ColumnRule, Constrainer, GenericConstrainer},
+    traits::{ColumnRule, Constrainer, GenericConstrainer, Reporter},
 };
 
 /// Struct defining a constraint that enforces that column names are not Rust
@@ -45,37 +46,38 @@ impl<DB: DatabaseLike + 'static> From<NoRustKeywordColumnName<DB>> for GenericCo
     }
 }
 
+impl<DB> Rule for NoRustKeywordColumnName<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "NoRustKeywordColumnName",
+            LintGroup::Restriction,
+            "Code generated from the schema cannot name a Rust item after a keyword without a raw identifier.",
+            Some("https://doc.rust-lang.org/reference/keywords.html"),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> ColumnRule for NoRustKeywordColumnName<DB> {
     type Database = DB;
 
-    fn validate_column(
+    fn check_column(
         &self,
         database: &Self::Database,
         column: &<Self::Database as DatabaseLike>::Column,
-    ) -> Result<(), crate::error::Error<Self::Database>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let column_name = column.column_name();
-        if is_rust_keyword(column_name) {
-            let table_name = column.table(database).table_name();
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("NoRustKeywordColumnName")
-                .unwrap()
-                .object(format!("{table_name}.{column_name}"))
-                .unwrap()
-                .message(format!(
-                    "Column name '{column_name}' in table '{table_name}' is a Rust keyword."
-                ))
-                .unwrap()
-                .resolution(format!(
-                    "Rename the column '{column_name}' to something that is not a Rust keyword."
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            return Err(crate::error::Error::Column(
-                Box::new(column.clone()),
-                error.into(),
-            ));
+        if !is_rust_keyword(column_name) {
+            return Ok(());
         }
+
+        let table_name = column.table(database).table_name();
+        reporter.column(
+            column,
+            format!("Column name '{column_name}' in table '{table_name}' is a Rust keyword"),
+            format!("Rename the column '{column_name}' to something that is not a Rust keyword"),
+        )?;
         Ok(())
     }
 }

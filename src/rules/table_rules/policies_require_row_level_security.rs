@@ -3,8 +3,9 @@
 use sql_traits::traits::{DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that if a table has policies, it must have RLS enabled.
@@ -53,38 +54,35 @@ impl<DB: DatabaseLike + 'static> From<PoliciesRequireRowLevelSecurity<DB>>
     }
 }
 
+impl<DB> Rule for PoliciesRequireRowLevelSecurity<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "PoliciesRequireRowLevelSecurity",
+            LintGroup::Correctness,
+            "PostgreSQL applies no policy until row-level security is enabled on the table, so the policies restrict nothing.",
+            Some("https://www.postgresql.org/docs/current/sql-createpolicy.html"),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for PoliciesRequireRowLevelSecurity<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
-        let has_policies = table.policies(database)?.next().is_some();
-        let is_rls_enabled = table.has_row_level_security(database)?;
-
-        if has_policies && !is_rls_enabled {
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("PoliciesRequireRowLevelSecurity")
-                .unwrap()
-                .object(table.table_name().to_owned())
-                .unwrap()
-                .message(format!(
-                    "Table '{}' has policies but RLS is not enabled",
-                    table.table_name()
-                ))
-                .unwrap()
-                .resolution("Enable Row Level Security on the table".to_string())
-                .unwrap()
-                .try_into()
-                .unwrap();
-            Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ))
-        } else {
-            Ok(())
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
+        if table.policies(database)?.next().is_some() && !table.has_row_level_security(database)? {
+            let table_name = table.table_name();
+            reporter.table(
+                table,
+                format!("Table '{table_name}' has policies but row-level security is not enabled."),
+                format!("ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY;"),
+            )?;
         }
+        Ok(())
     }
 }

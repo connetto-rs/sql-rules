@@ -10,8 +10,9 @@
 use sql_traits::traits::{DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces non-redundant extension DAG
@@ -92,53 +93,74 @@ impl<DB: DatabaseLike + 'static> From<NonRedundantExtensionDag<DB>> for GenericC
     }
 }
 
+impl<DB> Rule for NonRedundantExtensionDag<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "NonRedundantExtensionDag",
+            LintGroup::Complexity,
+            "A redundant extension edge repeats what the hierarchy already implies, so it adds a dependency the schema does not need.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for NonRedundantExtensionDag<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         // Collect all directly extended tables
         let extended_tables = table
             .extended_tables(database)?
             .collect::<Vec<&<DB as DatabaseLike>::Table>>();
 
-        for (i, extended_table) in extended_tables.iter().enumerate() {
-            for (j, other_extended_table) in extended_tables.iter().enumerate() {
-                if i == j {
+        let table_name = table.table_name();
+        for (i, first) in extended_tables.iter().enumerate() {
+            for (j, second) in extended_tables.iter().enumerate() {
+                if i >= j {
                     continue;
                 }
-                if other_extended_table.is_descendant_of(database, extended_table)?
-                    || extended_table == other_extended_table
-                {
-                    let error: RuleErrorInfo = RuleErrorInfo::builder()
-                        .rule("NonRedundantExtensionDag")
-                        .unwrap()
-                        .object(table.table_name().to_owned())
-                        .unwrap()
-                        .message(format!(
-                            "Table '{}' has redundant extension structure (duplicate or transitive extensions)",
-                            table.table_name()
-                        ))
-                        .unwrap()
-                        .resolution(
-                            "Remove redundant foreign key extensions. Ensure each extended table is distinct \
-                             and not reachable through another extension path."
-                                .to_string(),
-                        )
-                        .unwrap()
-                        .try_into()
-                        .unwrap();
-                    return Err(crate::error::Error::Table(
-                        Box::new(table.clone()),
-                        error.into(),
-                    ));
+                if first == second {
+                    let duplicated = first.table_name();
+                    reporter.table(
+                        table,
+                        format!("Table '{table_name}' extends '{duplicated}' more than once."),
+                        format!(
+                            "Remove the duplicate foreign key that makes table '{table_name}' extend '{duplicated}'."
+                        ),
+                    )?;
+                } else if second.is_descendant_of(database, first)? {
+                    let redundant = first.table_name();
+                    let witness = second.table_name();
+                    reporter.table(
+                        table,
+                        format!(
+                            "Table '{table_name}' extends '{redundant}' directly, but its extension of '{witness}' already implies it."
+                        ),
+                        format!(
+                            "Remove the foreign key from table '{table_name}' that extends '{redundant}'."
+                        ),
+                    )?;
+                } else if first.is_descendant_of(database, second)? {
+                    let redundant = second.table_name();
+                    let witness = first.table_name();
+                    reporter.table(
+                        table,
+                        format!(
+                            "Table '{table_name}' extends '{redundant}' directly, but its extension of '{witness}' already implies it."
+                        ),
+                        format!(
+                            "Remove the foreign key from table '{table_name}' that extends '{redundant}'."
+                        ),
+                    )?;
                 }
             }
         }
-
         Ok(())
     }
 }

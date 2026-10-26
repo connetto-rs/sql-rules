@@ -4,9 +4,10 @@
 use sql_traits::traits::{DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
     rules::rust_keywords::is_rust_keyword,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that table names are not Rust
@@ -45,33 +46,34 @@ impl<DB: DatabaseLike + 'static> From<NoRustKeywordTableName<DB>> for GenericCon
     }
 }
 
+impl<DB> Rule for NoRustKeywordTableName<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "NoRustKeywordTableName",
+            LintGroup::Restriction,
+            "Code generated from the schema cannot name a Rust item after a keyword without a raw identifier.",
+            Some("https://doc.rust-lang.org/reference/keywords.html"),
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for NoRustKeywordTableName<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         _database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let table_name = table.table_name();
         if is_rust_keyword(table_name) {
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("NoRustKeywordTableName")
-                .unwrap()
-                .object(table_name.to_owned())
-                .unwrap()
-                .message(format!("Table name '{table_name}' is a Rust keyword."))
-                .unwrap()
-                .resolution(format!(
-                    "Rename the table '{table_name}' to something that is not a Rust keyword."
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            return Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ));
+            reporter.table(
+                table,
+                format!("Table name '{table_name}' is a Rust keyword."),
+                format!("Rename the table '{table_name}' to a name that is not a Rust keyword."),
+            )?;
         }
         Ok(())
     }

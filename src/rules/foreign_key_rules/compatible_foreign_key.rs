@@ -1,7 +1,6 @@
 //! Submodule providing the `CompatibleForeignKey` constraint, which enforces
-//! that foreign key names, when defined, must have columns which are compatible
-//! with the referenced columns, i.e. have the same data type and they are from
-//! which are part the same extension hierarchy.
+//! that foreign key columns are compatible with the referenced columns, i.e.
+//! have the same data type and are part of the same extension hierarchy.
 
 use std::borrow::Borrow;
 
@@ -11,13 +10,14 @@ use sql_traits::{
 };
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, ForeignKeyRule, GenericConstrainer},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, ForeignKeyRule, GenericConstrainer, Reporter},
 };
 
-/// Struct defining a constraint that enforces that foreign key names are
+/// Struct defining a constraint that enforces that foreign key columns are
 /// compatible with the referenced columns, i.e. have the same data type and
-/// they are from the same extension hierarchy.
+/// are part of the same extension hierarchy.
 ///
 /// # Example
 ///
@@ -46,8 +46,14 @@ use crate::{
 /// ",
 /// )
 /// .unwrap();
-/// let error = constrainer.validate_schema(&both_generated).unwrap_err().to_string();
-/// assert!(error.contains("`child.id` and referenced column `parent.id` are both generative"));
+/// let error = constrainer.validate_schema(&both_generated).unwrap_err();
+/// assert!(matches!(
+///     error,
+///     Error::Violation(violation)
+///         if violation
+///             .message()
+///             .contains("`child.id` and referenced column `parent.id` both generate their own values")
+/// ));
 ///
 /// // `d.x` references `a`, while the unique `b.code` references nothing
 /// let host_in_other_hierarchy = ParserDB::parse::<GenericDialect>(
@@ -58,8 +64,14 @@ use crate::{
 /// ",
 /// )
 /// .unwrap();
-/// let error = constrainer.validate_schema(&host_in_other_hierarchy).unwrap_err().to_string();
-/// assert!(error.contains("`d.x` references [a], while `b.code` references [none]"));
+/// let error = constrainer.validate_schema(&host_in_other_hierarchy).unwrap_err();
+/// assert!(matches!(
+///     error,
+///     Error::Violation(violation)
+///         if violation
+///             .message()
+///             .contains("`d.x` references [a], while `b.code` references [none]")
+/// ));
 ///
 /// // `d.b_a_id` references nothing, while the unique `b.a_id` references `a`
 /// let referenced_in_other_hierarchy = ParserDB::parse::<GenericDialect>(
@@ -70,8 +82,14 @@ use crate::{
 /// ",
 /// )
 /// .unwrap();
-/// let error = constrainer.validate_schema(&referenced_in_other_hierarchy).unwrap_err().to_string();
-/// assert!(error.contains("`d.b_a_id` references [none], while `b.a_id` references [a]"));
+/// let error = constrainer.validate_schema(&referenced_in_other_hierarchy).unwrap_err();
+/// assert!(matches!(
+///     error,
+///     Error::Violation(violation)
+///         if violation
+///             .message()
+///             .contains("`d.b_a_id` references [none], while `b.a_id` references [a]")
+/// ));
 ///
 /// let extension_dag = ParserDB::parse::<GenericDialect>(
 ///     "
@@ -99,8 +117,6 @@ use crate::{
 /// ",
 /// )
 /// .unwrap();
-///
-/// constrainer.validate_schema(&valid_schema2).unwrap();
 /// assert!(constrainer.validate_schema(&valid_schema2).is_ok());
 /// ```
 pub struct CompatibleForeignKey<C>(std::marker::PhantomData<C>);
@@ -119,6 +135,18 @@ impl<DB: DatabaseLike + 'static> From<CompatibleForeignKey<DB>> for GenericConst
     }
 }
 
+impl<C> Rule for CompatibleForeignKey<C> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "CompatibleForeignKey",
+            LintGroup::Suspicious,
+            "A foreign key whose columns differ in type from the referenced columns, or that links tables outside one extension hierarchy, usually points at the wrong column.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
     fn get_incompatibility_details(
         database: &DB,
@@ -130,14 +158,14 @@ impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
         if host_column.is_generated() && referenced_column.is_generated() {
             Ok((
                 format!(
-                    "Foreign key column `{}.{}` and referenced column `{}.{}` are both generative (auto-increment/serial), which means they should never have the same value",
+                    "Foreign key column `{}.{}` and referenced column `{}.{}` both generate their own values, so they match the referenced row only by coincidence.",
                     host_table.table_name(),
                     host_column.column_name(),
                     referenced_table.table_name(),
                     referenced_column.column_name(),
                 ),
                 format!(
-                    "Remove the generative property from `{}.{}` (change from SERIAL/AUTO_INCREMENT to INT/BIGINT) or redesign the foreign key relationship",
+                    "Remove the generative property from `{}.{}` (change from SERIAL/AUTO_INCREMENT to INT/BIGINT) or redesign the foreign key relationship.",
                     host_table.table_name(),
                     host_column.column_name(),
                 ),
@@ -147,7 +175,7 @@ impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
         {
             Ok((
                 format!(
-                    "Foreign key column `{}.{}` has data type '{}' which is incompatible with referenced column `{}.{}` data type '{}'",
+                    "Foreign key column `{}.{}` has data type '{}', which differs from referenced column `{}.{}` with data type '{}'.",
                     host_table.table_name(),
                     host_column.column_name(),
                     host_column.normalized_data_type(database),
@@ -156,7 +184,7 @@ impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
                     referenced_column.normalized_data_type(database),
                 ),
                 format!(
-                    "Change the data type of `{}.{}` to '{}' to match the referenced column",
+                    "Change the data type of `{}.{}` to '{}' to match the referenced column.",
                     host_table.table_name(),
                     host_column.column_name(),
                     referenced_column.normalized_data_type(database),
@@ -195,7 +223,7 @@ impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
 
             Ok((
                 format!(
-                    "Foreign key column `{}.{}` is not compatible with referenced column `{}.{}`: they reference incompatible table hierarchies. `{}.{}` references [{}], while `{}.{}` references [{}]",
+                    "Foreign key column `{}.{}` and referenced column `{}.{}` belong to unrelated extension hierarchies, since `{}.{}` references [{}], while `{}.{}` references [{}].",
                     host_table.table_name(),
                     host_column.column_name(),
                     referenced_table.table_name(),
@@ -208,7 +236,7 @@ impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
                     other_refs,
                 ),
                 format!(
-                    "Ensure that `{}.{}` and `{}.{}` are part of the same table extension hierarchy, or reconsider the foreign key relationship",
+                    "Ensure that `{}.{}` and `{}.{}` are part of the same table extension hierarchy, or reconsider the foreign key relationship.",
                     host_table.table_name(),
                     host_column.column_name(),
                     referenced_table.table_name(),
@@ -222,11 +250,12 @@ impl<DB: DatabaseLike> CompatibleForeignKey<DB> {
 impl<DB: DatabaseLike> ForeignKeyRule for CompatibleForeignKey<DB> {
     type Database = DB;
 
-    fn validate_foreign_key(
+    fn check_foreign_key(
         &self,
         database: &Self::Database,
         foreign_key: &<Self::Database as DatabaseLike>::ForeignKey,
-    ) -> Result<(), crate::prelude::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let host_table = foreign_key.host_table(database);
         let referenced_table = foreign_key.referenced_table(database)?;
         for (host_column, referenced_column) in foreign_key
@@ -242,27 +271,7 @@ impl<DB: DatabaseLike> ForeignKeyRule for CompatibleForeignKey<DB> {
                     host_column,
                     referenced_column,
                 )?;
-
-                let error: RuleErrorInfo = RuleErrorInfo::builder()
-                    .rule("CompatibleForeignKey")
-                    .unwrap()
-                    .object(
-                        foreign_key
-                            .foreign_key_name()
-                            .unwrap_or("Unnamed foreign key")
-                            .to_owned(),
-                    )
-                    .unwrap()
-                    .message(message)
-                    .unwrap()
-                    .resolution(resolution)
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                return Err(crate::error::Error::ForeignKey(
-                    Box::new(foreign_key.clone()),
-                    error.into(),
-                ));
+                reporter.foreign_key(foreign_key, message, resolution)?;
             }
         }
 

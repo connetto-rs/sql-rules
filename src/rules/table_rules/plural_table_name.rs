@@ -5,8 +5,9 @@ use inflection_rs::inflection::pluralize;
 use sql_traits::traits::{DatabaseLike, TableLike};
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 
 /// Struct defining a constraint that enforces that the last segment of table
@@ -75,14 +76,27 @@ impl<DB: DatabaseLike + 'static> From<PluralTableName<DB>> for GenericConstraine
     }
 }
 
+impl<DB> Rule for PluralTableName<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "PluralTableName",
+            LintGroup::Style,
+            "One naming convention keeps queries predictable, and this crate names a table after the collection of rows it holds.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for PluralTableName<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         _database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let table_name = table.table_name();
         let last_segment = table_name.split('_').next_back().unwrap_or(table_name);
 
@@ -90,36 +104,22 @@ impl<DB: DatabaseLike> TableRule for PluralTableName<DB> {
         // change it
         let pluralized = pluralize(last_segment);
 
-        if pluralized == last_segment {
-            Ok(())
-        } else {
-            let expected_plural = pluralized;
+        if pluralized != last_segment {
             let expected_name = if table_name.contains('_') {
                 let prefix = &table_name[..table_name.rfind('_').unwrap()];
-                format!("{prefix}_{expected_plural}")
+                format!("{prefix}_{pluralized}")
             } else {
-                expected_plural.clone()
+                pluralized
             };
 
-            let error: RuleErrorInfo = RuleErrorInfo::builder()
-                .rule("PluralTableName")
-                .unwrap()
-                .object(table_name.to_owned())
-                .unwrap()
-                .message(format!(
-                    "Table '{table_name}' violates plural naming convention: the last segment '{last_segment}' is singular, not plural"
-                ))
-                .unwrap()
-                .resolution(format!(
-                    "Change '{table_name}' to '{expected_name}' (pluralize the last segment from '{last_segment}' to '{expected_plural}')"
-                ))
-                .unwrap()
-                .try_into()
-                .unwrap();
-            Err(crate::error::Error::Table(
-                Box::new(table.clone()),
-                error.into(),
-            ))
+            reporter.table(
+                table,
+                format!(
+                    "The last segment '{last_segment}' of table '{table_name}' is singular, not plural."
+                ),
+                format!("Rename the table to '{expected_name}'."),
+            )?;
         }
+        Ok(())
     }
 }

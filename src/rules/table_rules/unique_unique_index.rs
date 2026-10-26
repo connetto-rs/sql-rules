@@ -1,16 +1,17 @@
 //! Submodule providing the `UniqueUniqueIndex` constraint, which enforces
-//! that check constraints are unique per table, meaning that no two check
-//! constraints have the same clause in a single table.
+//! that unique indices are unique per table, meaning that no two unique
+//! indices have the same columns in a single table.
 
 use crate::{
-    error::RuleErrorInfo,
-    traits::{Constrainer, GenericConstrainer, TableRule},
+    error::Interruption,
+    lint::{LintGroup, Rule, RuleMetadata},
+    traits::{Constrainer, GenericConstrainer, Reporter, TableRule},
 };
 use sql_traits::errors::LookupError;
-use sql_traits::traits::IndexLike;
-use sql_traits::traits::{DatabaseLike, TableLike};
+use sql_traits::traits::{DatabaseLike, IndexLike, TableLike};
 
-/// Struct defining a constraint that enforces that table names are lowercase.
+/// Struct defining a constraint that enforces that unique indices are unique
+/// per table.
 ///
 /// # Example
 ///
@@ -46,14 +47,27 @@ impl<DB: DatabaseLike + 'static> From<UniqueUniqueIndex<DB>> for GenericConstrai
     }
 }
 
+impl<DB> Rule for UniqueUniqueIndex<DB> {
+    fn metadata(&self) -> &'static RuleMetadata {
+        static METADATA: RuleMetadata = RuleMetadata::new(
+            "UniqueUniqueIndex",
+            LintGroup::Complexity,
+            "A duplicated unique index enforces nothing more and is maintained again on every write.",
+            None,
+        );
+        &METADATA
+    }
+}
+
 impl<DB: DatabaseLike> TableRule for UniqueUniqueIndex<DB> {
     type Database = DB;
 
-    fn validate_table(
+    fn check_table(
         &self,
         database: &Self::Database,
         table: &<Self::Database as DatabaseLike>::Table,
-    ) -> Result<(), crate::error::Error<DB>> {
+        reporter: &mut Reporter<'_, Self::Database>,
+    ) -> Result<(), Interruption> {
         let mut expressions = table
             .unique_indices(database)?
             .map(|unique_index| unique_index.expression(database))
@@ -61,26 +75,17 @@ impl<DB: DatabaseLike> TableRule for UniqueUniqueIndex<DB> {
         expressions.sort_unstable();
         for window in expressions.windows(2) {
             if window[0] == window[1] {
+                let table_name = table.table_name();
                 let duplicate_expression = window[0];
-                let error: RuleErrorInfo = RuleErrorInfo::builder()
-                    .rule("UniqueUniqueIndex")
-                    .unwrap()
-                    .object(table.table_name().to_owned())
-                    .unwrap()
-                    .message(format!(
-                        "Table '{}' has non-unique unique index on columns: {}",
-                        table.table_name(),
-                        duplicate_expression
-                    ))
-                    .unwrap()
-                    .resolution("Ensure all unique index in the table are unique".to_string())
-                    .unwrap()
-                    .try_into()
-                    .unwrap();
-                return Err(crate::error::Error::Table(
-                    Box::new(table.clone()),
-                    error.into(),
-                ));
+                reporter.table(
+                    table,
+                    format!(
+                        "Table '{table_name}' has the duplicate unique index on {duplicate_expression}."
+                    ),
+                    format!(
+                        "Remove one of the duplicate unique index definitions on {duplicate_expression} from table '{table_name}'."
+                    ),
+                )?;
             }
         }
         Ok(())
