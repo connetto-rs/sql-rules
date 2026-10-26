@@ -2,7 +2,11 @@
 
 use std::fmt::{self, Display};
 
-use sql_traits::{errors::LookupError, traits::DatabaseLike};
+use sql_traits::{
+    errors::LookupError,
+    structs::TargetName,
+    traits::{DatabaseLike, PolicyLike, TableLike},
+};
 
 use crate::lint::{Level, RuleMetadata};
 
@@ -15,6 +19,112 @@ pub enum Location<DB: DatabaseLike> {
     Column(Box<DB::Column>),
     /// A foreign key.
     ForeignKey(Box<DB::ForeignKey>),
+    /// Policy clauses, in the order the finding traverses them.
+    Policies(Vec<PolicySite<DB>>),
+}
+
+/// Clause of a policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PolicyClause {
+    /// The `USING` clause, which filters existing rows.
+    Using,
+    /// The `WITH CHECK` clause, which checks new rows.
+    WithCheck,
+}
+
+impl Display for PolicyClause {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Using => "USING",
+            Self::WithCheck => "WITH CHECK",
+        })
+    }
+}
+
+/// One policy clause and the offending sub-expression within it.
+#[derive(Debug)]
+pub struct PolicySite<DB: DatabaseLike> {
+    pub(crate) table: Box<DB::Table>,
+    pub(crate) policy: Box<DB::Policy>,
+    pub(crate) clause: PolicyClause,
+    pub(crate) expression: String,
+}
+
+impl<DB: DatabaseLike> PolicySite<DB> {
+    /// Returns the table the policy is defined on.
+    #[must_use]
+    pub fn table(&self) -> &DB::Table {
+        &self.table
+    }
+
+    /// Returns the policy.
+    #[must_use]
+    pub fn policy(&self) -> &DB::Policy {
+        &self.policy
+    }
+
+    /// Returns the clause holding the offending sub-expression.
+    #[must_use]
+    pub fn clause(&self) -> PolicyClause {
+        self.clause
+    }
+
+    /// Returns the offending sub-expression rendered as SQL.
+    #[must_use]
+    pub fn expression(&self) -> &str {
+        &self.expression
+    }
+}
+
+impl<DB: DatabaseLike> Display for PolicySite<DB> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (table, policy) = (self.table.table_name(), self.policy.name());
+        write!(
+            formatter,
+            "{table}.{policy} {}: {}",
+            self.clause, self.expression
+        )
+    }
+}
+
+/// A reviewed exception excusing one rule's violations that list a policy.
+#[derive(Debug, Clone)]
+pub struct PolicyAllowance {
+    pub(crate) rule: String,
+    pub(crate) table: TargetName<'static>,
+    pub(crate) policy: String,
+}
+
+impl PolicyAllowance {
+    /// Returns the type name of the excused rule.
+    #[must_use]
+    pub fn rule(&self) -> &str {
+        &self.rule
+    }
+
+    /// Returns the table the excused policy is defined on.
+    #[must_use]
+    pub fn table(&self) -> &TargetName<'static> {
+        &self.table
+    }
+
+    /// Returns the name of the excused policy.
+    #[must_use]
+    pub fn policy(&self) -> &str {
+        &self.policy
+    }
+}
+
+impl Display for PolicyAllowance {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "the allowance for {} on policy '{}' of table '{}' excuses no violation",
+            self.rule,
+            self.policy,
+            self.table.name()
+        )
+    }
 }
 
 /// One occurrence of a rule violation.
@@ -68,17 +178,27 @@ impl<DB: DatabaseLike> Violation<DB> {
 
 impl<DB: DatabaseLike> Display for Violation<DB> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{} [{}::{}] {}: {}\n  why: {}\n  fix: {}",
-            self.level,
-            self.rule.group,
-            self.rule.name,
-            self.object,
-            self.message,
-            self.rule.rationale,
-            self.resolution,
-        )?;
+        let Self {
+            rule,
+            level,
+            object,
+            message,
+            resolution,
+            ..
+        } = self;
+        let RuleMetadata {
+            name,
+            group,
+            rationale,
+            ..
+        } = rule;
+        write!(formatter, "{level} [{group}::{name}] {object}: {message}")?;
+        write!(formatter, "\n  why: {rationale}\n  fix: {resolution}")?;
+        if let Location::Policies(sites) = &self.location {
+            for site in sites {
+                write!(formatter, "\n  at {site}")?;
+            }
+        }
         if let Some(source) = self.rule.source {
             write!(formatter, "\n  source: {source}")?;
         }
@@ -96,6 +216,9 @@ pub enum Error<DB: DatabaseLike> {
     /// table a foreign key references.
     #[error("Schema lookup failed: {0}")]
     Lookup(#[from] LookupError),
+    /// An allowance excused no violation, so it is stale or misspelled.
+    #[error("Unused allowance: {0}")]
+    UnusedAllowance(PolicyAllowance),
 }
 
 /// Why a rule stopped before checking everything it covers.

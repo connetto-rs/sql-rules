@@ -10,7 +10,9 @@ pub mod prelude {
     pub use sql_traits::prelude::*;
 
     pub use crate::{
-        error::{Error, Interruption, Location, Violation},
+        error::{
+            Error, Interruption, Location, PolicyAllowance, PolicyClause, PolicySite, Violation,
+        },
         lint::{Level, LintGroup, Rule, RuleMetadata},
         rules::*,
         traits::*,

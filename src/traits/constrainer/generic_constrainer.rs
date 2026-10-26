@@ -2,12 +2,18 @@
 
 use std::ops::ControlFlow;
 
-use sql_traits::traits::{DatabaseLike, TableLike};
+use sql_traits::{
+    structs::{IdentifierCase, TargetName},
+    traits::{DatabaseLike, TableLike},
+};
 
 use crate::{
-    error::{Error, Interruption},
+    error::{Error, Interruption, PolicyAllowance},
     lint::{Level, LintGroup, Rule, RuleMetadata},
-    traits::{ColumnRule, Constrainer, ForeignKeyRule, Reporter, TableRule},
+    traits::{
+        ColumnRule, Constrainer, ForeignKeyRule, Reporter, SchemaRule, TableRule,
+        reporter::ResolvedAllowance,
+    },
 };
 
 /// A registered rule with its configured level.
@@ -40,12 +46,14 @@ impl Levels {
     }
 }
 
-/// A constrainer holding rules and their levels.
+/// A constrainer holding rules, their levels and policy allowances.
 pub struct GenericConstrainer<DB: DatabaseLike> {
     tables: Vec<Registered<dyn TableRule<Database = DB>>>,
     columns: Vec<Registered<dyn ColumnRule<Database = DB>>>,
     foreign_keys: Vec<Registered<dyn ForeignKeyRule<Database = DB>>>,
+    schemas: Vec<Registered<dyn SchemaRule<Database = DB>>>,
     levels: Levels,
+    allowances: Vec<PolicyAllowance>,
 }
 
 impl<DB: DatabaseLike> Default for GenericConstrainer<DB> {
@@ -54,9 +62,47 @@ impl<DB: DatabaseLike> Default for GenericConstrainer<DB> {
             tables: Vec::new(),
             columns: Vec::new(),
             foreign_keys: Vec::new(),
+            schemas: Vec::new(),
             levels: Levels::default(),
+            allowances: Vec::new(),
         }
     }
+}
+
+/// Shared state of one traversal, lent to each rule's reporter.
+struct Run<'run, DB: DatabaseLike> {
+    database: &'run DB,
+    allowances: Vec<ResolvedAllowance<'run, DB>>,
+    used: Vec<bool>,
+}
+
+impl<DB: DatabaseLike> Run<'_, DB> {
+    /// Runs one rule check through a reporter and forwards its lookup failure.
+    fn check(
+        &mut self,
+        rule: &'static RuleMetadata,
+        level: Level,
+        sink: &mut dyn FnMut(Error<DB>) -> ControlFlow<()>,
+        check: impl FnOnce(&mut Reporter<'_, DB>) -> Result<(), Interruption>,
+    ) -> ControlFlow<()> {
+        let outcome = check(&mut Reporter::new(
+            self.database,
+            rule,
+            level,
+            &self.allowances,
+            &mut self.used,
+            sink,
+        ));
+        match outcome {
+            Ok(()) => ControlFlow::Continue(()),
+            Err(Interruption::Halted) => ControlFlow::Break(()),
+            Err(Interruption::Lookup(error)) => sink(Error::Lookup(error)),
+        }
+    }
+}
+
+fn enabled<R: ?Sized>(registered: &[Registered<R>]) -> impl Iterator<Item = &Registered<R>> {
+    registered.iter().filter(|entry| entry.level > Level::Allow)
 }
 
 impl<DB: DatabaseLike> GenericConstrainer<DB> {
@@ -92,6 +138,15 @@ impl<DB: DatabaseLike> GenericConstrainer<DB> {
         self.foreign_keys.push(registered);
     }
 
+    pub(crate) fn register_schema_rule_with_floor(
+        &mut self,
+        rule: Box<dyn SchemaRule<Database = DB>>,
+        floor: Level,
+    ) {
+        let registered = self.registered(rule, floor);
+        self.schemas.push(registered);
+    }
+
     pub(crate) fn set_rule_level(&mut self, rule: &str, level: Level) {
         match self.levels.rules.iter_mut().find(|(name, _)| name == rule) {
             Some(entry) => entry.1 = level,
@@ -105,10 +160,19 @@ impl<DB: DatabaseLike> GenericConstrainer<DB> {
         self.refresh();
     }
 
+    pub(crate) fn allow_policy(&mut self, rule: &str, table: TargetName<'_>, policy: &str) {
+        self.allowances.push(PolicyAllowance {
+            rule: rule.to_owned(),
+            table: table.into_owned(),
+            policy: policy.to_owned(),
+        });
+    }
+
     fn refresh(&mut self) {
         self.levels.refresh(&mut self.tables);
         self.levels.refresh(&mut self.columns);
         self.levels.refresh(&mut self.foreign_keys);
+        self.levels.refresh(&mut self.schemas);
     }
 
     pub(crate) fn visit(
@@ -116,38 +180,35 @@ impl<DB: DatabaseLike> GenericConstrainer<DB> {
         database: &DB,
         sink: &mut dyn FnMut(Error<DB>) -> ControlFlow<()>,
     ) -> ControlFlow<()> {
-        for table in database.tables() {
-            for entry in self
-                .tables
+        let mut run = Run {
+            database,
+            allowances: self
+                .allowances
                 .iter()
-                .filter(|entry| entry.level > Level::Allow)
-            {
-                let outcome = entry.rule.check_table(
-                    database,
-                    table,
-                    &mut Reporter::new(database, entry.rule.metadata(), entry.level, sink),
-                );
-                settle(outcome, sink)?;
+                .map(|allowance| ResolvedAllowance {
+                    rule: &allowance.rule,
+                    table: database
+                        .table_by_target(allowance.table.clone(), IdentifierCase::Folded)
+                        .ok()
+                        .flatten(),
+                    policy: &allowance.policy,
+                })
+                .collect(),
+            used: vec![false; self.allowances.len()],
+        };
+        for table in database.tables() {
+            for entry in enabled(&self.tables) {
+                run.check(entry.rule.metadata(), entry.level, sink, |reporter| {
+                    entry.rule.check_table(database, table, reporter)
+                })?;
             }
             match table.columns(database) {
                 Ok(columns) => {
                     for column in columns {
-                        for entry in self
-                            .columns
-                            .iter()
-                            .filter(|entry| entry.level > Level::Allow)
-                        {
-                            let outcome = entry.rule.check_column(
-                                database,
-                                column,
-                                &mut Reporter::new(
-                                    database,
-                                    entry.rule.metadata(),
-                                    entry.level,
-                                    sink,
-                                ),
-                            );
-                            settle(outcome, sink)?;
+                        for entry in enabled(&self.columns) {
+                            run.check(entry.rule.metadata(), entry.level, sink, |reporter| {
+                                entry.rule.check_column(database, column, reporter)
+                            })?;
                         }
                     }
                 }
@@ -156,41 +217,29 @@ impl<DB: DatabaseLike> GenericConstrainer<DB> {
             match table.foreign_keys(database) {
                 Ok(foreign_keys) => {
                     for foreign_key in foreign_keys {
-                        for entry in self
-                            .foreign_keys
-                            .iter()
-                            .filter(|entry| entry.level > Level::Allow)
-                        {
-                            let outcome = entry.rule.check_foreign_key(
-                                database,
-                                foreign_key,
-                                &mut Reporter::new(
-                                    database,
-                                    entry.rule.metadata(),
-                                    entry.level,
-                                    sink,
-                                ),
-                            );
-                            settle(outcome, sink)?;
+                        for entry in enabled(&self.foreign_keys) {
+                            run.check(entry.rule.metadata(), entry.level, sink, |reporter| {
+                                entry
+                                    .rule
+                                    .check_foreign_key(database, foreign_key, reporter)
+                            })?;
                         }
                     }
                 }
                 Err(error) => sink(Error::Lookup(error))?,
             }
         }
+        for entry in enabled(&self.schemas) {
+            run.check(entry.rule.metadata(), entry.level, sink, |reporter| {
+                entry.rule.check_schema(database, reporter)
+            })?;
+        }
+        for (allowance, used) in self.allowances.iter().zip(&run.used) {
+            if !used {
+                sink(Error::UnusedAllowance(allowance.clone()))?;
+            }
+        }
         ControlFlow::Continue(())
-    }
-}
-
-/// Forwards a rule's lookup failure to the sink and propagates a halt.
-fn settle<DB: DatabaseLike>(
-    outcome: Result<(), Interruption>,
-    sink: &mut dyn FnMut(Error<DB>) -> ControlFlow<()>,
-) -> ControlFlow<()> {
-    match outcome {
-        Ok(()) => ControlFlow::Continue(()),
-        Err(Interruption::Halted) => ControlFlow::Break(()),
-        Err(Interruption::Lookup(error)) => sink(Error::Lookup(error)),
     }
 }
 

@@ -3,17 +3,18 @@
 
 use std::ops::ControlFlow;
 
+use sql_traits::{structs::TargetName, traits::DatabaseLike};
+
 use crate::{
     error::Error,
     lint::{Level, LintGroup},
-    traits::{ColumnRule, ForeignKeyRule, TableRule},
+    traits::{ColumnRule, ForeignKeyRule, SchemaRule, TableRule},
 };
 
 pub mod generic_constrainer;
 pub use generic_constrainer::GenericConstrainer;
 pub mod default_constrainer;
 pub use default_constrainer::DefaultConstrainer;
-use sql_traits::traits::DatabaseLike;
 
 /// Trait for types that apply rules to a schema.
 ///
@@ -52,6 +53,21 @@ pub trait Constrainer: Default {
             .register_foreign_key_rule_with_floor(rule, Level::Warn);
     }
 
+    /// Registers a schema rule.
+    fn register_schema_rule(&mut self, rule: Box<dyn SchemaRule<Database = Self::Database>>) {
+        self.constrainer_mut()
+            .register_schema_rule_with_floor(rule, Level::Warn);
+    }
+
+    /// Excuses the violations of a rule that list the given policy.
+    ///
+    /// An allowance that excuses nothing, because the policy was fixed, the
+    /// names do not match or the rule is at [`Level::Allow`], is reported as
+    /// [`Error::UnusedAllowance`].
+    fn allow_policy(&mut self, rule: &str, table: TargetName<'_>, policy: &str) {
+        self.constrainer_mut().allow_policy(rule, table, policy);
+    }
+
     /// Sets the level of every rule with the given type name, overriding its
     /// group's level.
     fn set_rule_level(&mut self, rule: &str, level: Level) {
@@ -64,10 +80,12 @@ pub trait Constrainer: Default {
         self.constrainer_mut().set_group_level(group, level);
     }
 
-    /// Passes every violation and lookup failure to `sink` until it breaks.
+    /// Passes every violation, lookup failure and unused allowance to `sink`
+    /// until it breaks.
     ///
     /// A lookup failure ends the rule that hit it on that object, and the
-    /// traversal continues with the next rule and object.
+    /// traversal continues with the next rule and object. Unused allowances
+    /// are reported only after a complete traversal.
     fn visit_schema(
         &self,
         database: &Self::Database,
@@ -76,8 +94,8 @@ pub trait Constrainer: Default {
         self.constrainer().visit(database, sink)
     }
 
-    /// Returns every violation raised at `warn` or `deny` and every lookup
-    /// failure, in traversal order.
+    /// Returns every violation raised at `warn` or `deny`, every lookup
+    /// failure and every unused allowance, in traversal order.
     ///
     /// # Example
     ///
@@ -102,12 +120,12 @@ pub trait Constrainer: Default {
     }
 
     /// Validates the schema, stopping at the first violation raised at `warn`
-    /// or `deny` or the first lookup failure.
+    /// or `deny`, the first lookup failure or the first unused allowance.
     ///
     /// # Errors
     ///
-    /// Returns the first [`Error::Violation`] or [`Error::Lookup`] in
-    /// traversal order.
+    /// Returns the first [`Error::Violation`], [`Error::Lookup`] or
+    /// [`Error::UnusedAllowance`] in traversal order.
     fn validate_schema(&self, database: &Self::Database) -> Result<(), Error<Self::Database>> {
         let mut first = None;
         let _ = self.visit_schema(database, &mut |error| {

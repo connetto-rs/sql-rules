@@ -2,12 +2,27 @@
 
 use std::ops::ControlFlow;
 
-use sql_traits::traits::{ColumnLike, DatabaseLike, ForeignKeyLike, TableLike};
+use sql_traits::traits::{ColumnLike, DatabaseLike, ForeignKeyLike, PolicyLike, TableLike};
 
 use crate::{
-    error::{Error, Interruption, Location, Violation},
+    error::{Error, Interruption, Location, PolicySite, Violation},
     lint::{Level, RuleMetadata},
 };
+
+/// A policy allowance whose table was resolved against the schema.
+pub(crate) struct ResolvedAllowance<'db, DB: DatabaseLike> {
+    pub(crate) rule: &'db str,
+    pub(crate) table: Option<&'db DB::Table>,
+    pub(crate) policy: &'db str,
+}
+
+impl<DB: DatabaseLike> ResolvedAllowance<'_, DB> {
+    fn excuses(&self, rule: &RuleMetadata, site: &PolicySite<DB>) -> bool {
+        self.rule == rule.name
+            && self.table == Some(site.table.as_ref())
+            && self.policy == site.policy.name()
+    }
+}
 
 /// Receives the violations of one rule and stamps them with its identity and
 /// effective level.
@@ -15,6 +30,8 @@ pub struct Reporter<'run, DB: DatabaseLike> {
     database: &'run DB,
     rule: &'static RuleMetadata,
     level: Level,
+    allowances: &'run [ResolvedAllowance<'run, DB>],
+    used: &'run mut [bool],
     sink: &'run mut dyn FnMut(Error<DB>) -> ControlFlow<()>,
 }
 
@@ -23,14 +40,49 @@ impl<'run, DB: DatabaseLike> Reporter<'run, DB> {
         database: &'run DB,
         rule: &'static RuleMetadata,
         level: Level,
+        allowances: &'run [ResolvedAllowance<'run, DB>],
+        used: &'run mut [bool],
         sink: &'run mut dyn FnMut(Error<DB>) -> ControlFlow<()>,
     ) -> Self {
         Self {
             database,
             rule,
             level,
+            allowances,
+            used,
             sink,
         }
+    }
+
+    /// Reports a violation spanning policy clauses, listed in traversal order,
+    /// unless an allowance for this rule names one of their policies.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Interruption::Halted`] when the caller needs no further
+    /// violations.
+    pub fn policies(
+        &mut self,
+        sites: Vec<PolicySite<DB>>,
+        message: String,
+        resolution: String,
+    ) -> Result<(), Interruption> {
+        let mut excused = false;
+        for (allowance, used) in self.allowances.iter().zip(self.used.iter_mut()) {
+            if sites.iter().any(|site| allowance.excuses(self.rule, site)) {
+                *used = true;
+                excused = true;
+            }
+        }
+        if excused {
+            return Ok(());
+        }
+        let object = sites
+            .iter()
+            .map(|site| format!("{}.{}", site.table.table_name(), site.policy.name()))
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        self.emit(Location::Policies(sites), object, message, resolution)
     }
 
     /// Reports a violation on a table.

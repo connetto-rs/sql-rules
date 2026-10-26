@@ -33,14 +33,14 @@ for error in constrainer.diagnostics(&database) {
 }
 ```
 
-A rule registered on its own, including a single rule converted with `.into()`, runs at least at `warn`. `DefaultConstrainer` registers every rule at its group's default.
+A rule registered on its own, including a single rule converted with `.into()`, runs at least at `warn`. `DefaultConstrainer` registers every rule at its group's default. `allow_policy` excuses one rule's findings on a reviewed policy, and an allowance that excuses nothing fails validation.
 
 ## Rules
 
 | Group | Default | Rules |
 | :--- | :--- | :--- |
-| `correctness` | `deny` | `PoliciesRequireRowLevelSecurity`, `NoTautologicalCheckRule`, `NoNegationCheckRule`, `NoSurrogatePrimaryKeyInExtension` |
-| `suspicious` | `warn` | `TextualColumnRule`, `CompatibleForeignKey`, `HasPrimaryKey`, `ExtensionForeignKeyOnDeleteCascade`, `NoForbiddenColumnInExtension`, `UniqueColumnNamesInExtensionGraph` |
+| `correctness` | `deny` | `PoliciesRequireRowLevelSecurity`, `PolicyReadCycle`, `NoTautologicalCheckRule`, `NoNegationCheckRule`, `NoSurrogatePrimaryKeyInExtension` |
+| `suspicious` | `warn` | `LatentPolicyReadCycle`, `TextualColumnRule`, `CompatibleForeignKey`, `HasPrimaryKey`, `ExtensionForeignKeyOnDeleteCascade`, `NoForbiddenColumnInExtension`, `UniqueColumnNamesInExtensionGraph` |
 | `complexity` | `warn` | `UniqueForeignKey`, `UniqueCheckRule`, `UniqueUniqueIndex`, `NonRedundantExtensionDag` |
 | `style` | `warn` | `LowercaseTableName`, `LowercaseColumnName`, `LowercaseForeignKeyName`, `SnakeCaseTableName`, `SnakeCaseColumnName`, `PluralTableName`, `SingularColumnName`, `PrimaryKeyReferenceEndsWithId`, `NonCompositePrimaryKeyNamedId` |
 | `pedantic` | `allow` | `PastTimeColumnRule`, `NonEmptyTextualColumnRule` |
