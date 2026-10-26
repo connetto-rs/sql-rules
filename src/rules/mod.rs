@@ -8,4 +8,5 @@ mod foreign_key_rules;
 pub use foreign_key_rules::*;
 mod schema_rules;
 pub use schema_rules::*;
+mod policy_support;
 pub mod rust_keywords;

@@ -39,8 +39,8 @@ A rule registered on its own, including a single rule converted with `.into()`, 
 
 | Group | Default | Rules |
 | :--- | :--- | :--- |
-| `correctness` | `deny` | `PoliciesRequireRowLevelSecurity`, `PolicyReadCycle`, `NoTautologicalCheckRule`, `NoNegationCheckRule`, `NoSurrogatePrimaryKeyInExtension` |
-| `suspicious` | `warn` | `LatentPolicyReadCycle`, `TextualColumnRule`, `CompatibleForeignKey`, `HasPrimaryKey`, `ExtensionForeignKeyOnDeleteCascade`, `NoForbiddenColumnInExtension`, `UniqueColumnNamesInExtensionGraph` |
+| `correctness` | `deny` | `PoliciesRequireRowLevelSecurity`, `PolicyReadCycle`, `DeadPermissivePolicy`, `NoTautologicalCheckRule`, `NoNegationCheckRule`, `NoSurrogatePrimaryKeyInExtension` |
+| `suspicious` | `warn` | `LatentPolicyReadCycle`, `TautologicalWithCheck`, `UnforcedRowLevelSecurity`, `TextualColumnRule`, `CompatibleForeignKey`, `HasPrimaryKey`, `ExtensionForeignKeyOnDeleteCascade`, `NoForbiddenColumnInExtension`, `UniqueColumnNamesInExtensionGraph` |
 | `complexity` | `warn` | `UniqueForeignKey`, `UniqueCheckRule`, `UniqueUniqueIndex`, `NonRedundantExtensionDag` |
 | `style` | `warn` | `LowercaseTableName`, `LowercaseColumnName`, `LowercaseForeignKeyName`, `SnakeCaseTableName`, `SnakeCaseColumnName`, `PluralTableName`, `SingularColumnName`, `PrimaryKeyReferenceEndsWithId`, `NonCompositePrimaryKeyNamedId` |
 | `pedantic` | `allow` | `PastTimeColumnRule`, `NonEmptyTextualColumnRule` |

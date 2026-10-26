@@ -6,13 +6,13 @@ use std::{collections::BTreeSet, ops::ControlFlow};
 use sql_traits::{
     errors::LookupError,
     traits::{DataStatementLike, DatabaseLike, PolicyLike, RoleLike, TableLike},
-    utils::identifier_resolution::normalize_identifier,
 };
-use sqlparser::ast::{CreatePolicyCommand, Expr, Owner, Query, Visit, Visitor};
+use sqlparser::ast::{CreatePolicyCommand, Expr, Query, Visit, Visitor};
 
 use crate::{
     error::{Interruption, PolicyClause, PolicySite},
     lint::{LintGroup, Rule, RuleMetadata},
+    rules::policy_support::{Command, held_roles, policy_roles},
     traits::{Constrainer, GenericConstrainer, Reporter, SchemaRule},
 };
 
@@ -20,30 +20,6 @@ const RESOLUTION: &str = "Read the looked-up table through a `STABLE SECURITY DE
 const SOURCE: Option<&str> = Some(
     "https://supabase.com/docs/guides/database/postgres/row-level-security#avoid-recursive-policies",
 );
-
-/// Statement command whose policies PostgreSQL expands.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Command {
-    Select,
-    Insert,
-    Update,
-    Delete,
-}
-
-impl Command {
-    const ALL: [Self; 4] = [Self::Select, Self::Insert, Self::Update, Self::Delete];
-
-    fn covered_by(self, command: CreatePolicyCommand) -> bool {
-        matches!(
-            (command, self),
-            (CreatePolicyCommand::All, _)
-                | (CreatePolicyCommand::Select, Self::Select)
-                | (CreatePolicyCommand::Insert, Self::Insert)
-                | (CreatePolicyCommand::Update, Self::Update)
-                | (CreatePolicyCommand::Delete, Self::Delete)
-        )
-    }
-}
 
 /// A base table read by a sublink of a policy clause.
 struct Read<'db, DB: DatabaseLike> {
@@ -123,18 +99,6 @@ struct PolicyFacts<'db, DB: DatabaseLike> {
     check: Vec<Read<'db, DB>>,
 }
 
-/// Normalized name of a policy role.
-fn owner_name(owner: &Owner) -> String {
-    match owner {
-        Owner::Ident(ident) => {
-            normalize_identifier(&ident.value, ident.quote_style.is_some()).into_owned()
-        }
-        Owner::CurrentRole => "CURRENT_ROLE".to_owned(),
-        Owner::CurrentUser => "CURRENT_USER".to_owned(),
-        Owner::SessionUser => "SESSION_USER".to_owned(),
-    }
-}
-
 /// The roles a querying role holds the privileges of.
 enum Holder {
     /// Every policy applies, whatever its roles.
@@ -185,8 +149,7 @@ impl<'db, DB: DatabaseLike> Analysis<'db, DB> {
                 table: policy.table(database)?,
                 policy,
                 command: policy.command(),
-                roles: (!policy.applies_to_public())
-                    .then(|| policy.roles(database).map(owner_name).collect()),
+                roles: policy_roles(database, policy),
                 has_sublinks: using_sublink || check_sublink,
                 has_check: check.is_some(),
                 using: using_reads,
@@ -212,17 +175,7 @@ impl<'db, DB: DatabaseLike> Analysis<'db, DB> {
         let mut declared = BTreeSet::new();
         for role in self.database.roles() {
             let name = role.stored_name().into_owned();
-            let mut held = BTreeSet::from([name.clone()]);
-            let mut frontier = vec![role];
-            while let Some(member) = frontier.pop() {
-                if member.inherits() {
-                    for parent in member.member_of(self.database) {
-                        if held.insert(parent.stored_name().into_owned()) {
-                            frontier.push(parent);
-                        }
-                    }
-                }
-            }
+            let held = held_roles(self.database, role);
             declared.insert(name.clone());
             holders.push((format!("role '{name}'"), Holder::Roles(held)));
         }
