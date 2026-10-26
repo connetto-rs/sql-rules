@@ -44,12 +44,12 @@ impl<DB: DatabaseLike + 'static> From<NonEmptyTextualColumnRule<DB>> for Generic
 
 impl<DB> Rule for NonEmptyTextualColumnRule<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NonEmptyTextualColumnRule",
-            LintGroup::Pedantic,
-            "An empty string beside NULL gives a column two spellings of a missing value.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NonEmptyTextualColumnRule",
+            group: LintGroup::Pedantic,
+            rationale: "An empty string beside NULL gives a column two spellings of a missing value.",
+            source: None,
+        };
         &METADATA
     }
 }

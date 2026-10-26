@@ -96,12 +96,12 @@ impl<DB: DatabaseLike + 'static> From<PrimaryKeyReferenceEndsWithId<DB>>
 
 impl<C> Rule for PrimaryKeyReferenceEndsWithId<C> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "PrimaryKeyReferenceEndsWithId",
-            LintGroup::Style,
-            "Ending every column that references a primary key in `_id` shows at a glance which columns are references.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "PrimaryKeyReferenceEndsWithId",
+            group: LintGroup::Style,
+            rationale: "Ending every column that references a primary key in `_id` shows at a glance which columns are references.",
+            source: None,
+        };
         &METADATA
     }
 }

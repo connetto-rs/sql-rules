@@ -48,12 +48,12 @@ impl<DB: DatabaseLike + 'static> From<NoRustKeywordTableName<DB>> for GenericCon
 
 impl<DB> Rule for NoRustKeywordTableName<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NoRustKeywordTableName",
-            LintGroup::Restriction,
-            "Code generated from the schema cannot name a Rust item after a keyword without a raw identifier.",
-            Some("https://doc.rust-lang.org/reference/keywords.html"),
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoRustKeywordTableName",
+            group: LintGroup::Restriction,
+            rationale: "Code generated from the schema cannot name a Rust item after a keyword without a raw identifier.",
+            source: Some("https://doc.rust-lang.org/reference/keywords.html"),
+        };
         &METADATA
     }
 }

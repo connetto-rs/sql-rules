@@ -51,12 +51,12 @@ impl<DB: DatabaseLike + 'static> From<UniqueCheckRule<DB>> for GenericConstraine
 
 impl<DB> Rule for UniqueCheckRule<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "UniqueCheckRule",
-            LintGroup::Complexity,
-            "A duplicated check constraint enforces nothing more and is evaluated again on every write.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "UniqueCheckRule",
+            group: LintGroup::Complexity,
+            rationale: "A duplicated check constraint enforces nothing more and is evaluated again on every write.",
+            source: None,
+        };
         &METADATA
     }
 }

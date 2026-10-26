@@ -25,7 +25,7 @@ fn violations<C: Constrainer<Database = ParserDB>>(
 fn raised_by(violations: &[Violation<ParserDB>], rule: &str) -> Vec<Level> {
     violations
         .iter()
-        .filter(|violation| violation.rule().name() == rule)
+        .filter(|violation| violation.rule().name == rule)
         .map(Violation::level)
         .collect()
 }
@@ -34,13 +34,34 @@ const UNCHECKED_TIMESTAMP: &str =
     "CREATE TABLE events (id INT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL);";
 
 #[test]
+fn groups_carry_their_clippy_names_and_default_levels() {
+    let table: Vec<(String, String)> = LintGroup::ALL
+        .iter()
+        .map(|group| (group.to_string(), group.default_level().to_string()))
+        .collect();
+    assert_eq!(
+        table,
+        [
+            ("correctness", "deny"),
+            ("suspicious", "warn"),
+            ("perf", "warn"),
+            ("complexity", "warn"),
+            ("style", "warn"),
+            ("pedantic", "allow"),
+            ("restriction", "allow"),
+        ]
+        .map(|(group, level)| (group.to_owned(), level.to_owned()))
+    );
+}
+
+#[test]
 fn an_individually_registered_allow_by_default_rule_runs_at_warn() {
     let constrainer: GenericConstrainer<ParserDB> = PastTimeColumnRule::default().into();
     let database = parse(UNCHECKED_TIMESTAMP);
     let Err(Error::Violation(violation)) = constrainer.validate_schema(&database) else {
         panic!("the explicitly registered pedantic rule must reject the schema");
     };
-    assert_eq!(violation.rule().group(), LintGroup::Pedantic);
+    assert_eq!(violation.rule().group, LintGroup::Pedantic);
     assert_eq!(violation.level(), Level::Warn);
 }
 
@@ -85,7 +106,7 @@ fn warnings_fail_validation_and_carry_their_level() {
         panic!("a warn-level violation must fail validation");
     };
     assert_eq!(violation.level(), Level::Warn);
-    assert_eq!(violation.rule().group(), LintGroup::Style);
+    assert_eq!(violation.rule().group, LintGroup::Style);
 }
 
 #[test]
@@ -96,7 +117,7 @@ fn correctness_rules_deny_by_default() {
         panic!("a tautological check must be rejected");
     };
     assert_eq!(violation.level(), Level::Deny);
-    assert_eq!(violation.rule().group(), LintGroup::Correctness);
+    assert_eq!(violation.rule().group, LintGroup::Correctness);
 }
 
 #[test]
@@ -156,7 +177,7 @@ fn text_length_accepts_any_bound_and_leaves_emptiness_to_its_own_rule() {
     let Err(Error::Violation(violation)) = textual.validate_schema(&unbounded) else {
         panic!("an unbounded text column must be reported");
     };
-    assert_eq!(violation.rule().group(), LintGroup::Suspicious);
+    assert_eq!(violation.rule().group, LintGroup::Suspicious);
     assert!(!violation.resolution().contains("255"));
 
     let non_empty: GenericConstrainer<ParserDB> = NonEmptyTextualColumnRule::default().into();
@@ -171,7 +192,7 @@ fn every_violation_names_its_rule_by_type_name() {
     let Err(Error::Violation(violation)) = constrainer.validate_schema(&database) else {
         panic!("duplicate checks must be reported");
     };
-    assert_eq!(violation.rule().name(), "UniqueCheckRule");
+    assert_eq!(violation.rule().name, "UniqueCheckRule");
 }
 
 #[test]
@@ -182,10 +203,10 @@ fn mismatched_foreign_key_types_are_suspicious_warnings() {
     let raised = violations(&DefaultConstrainer::<ParserDB>::default(), &database);
     let compatible: Vec<_> = raised
         .iter()
-        .filter(|violation| violation.rule().name() == "CompatibleForeignKey")
+        .filter(|violation| violation.rule().name == "CompatibleForeignKey")
         .collect();
     assert_eq!(compatible.len(), 1);
-    assert_eq!(compatible[0].rule().group(), LintGroup::Suspicious);
+    assert_eq!(compatible[0].rule().group, LintGroup::Suspicious);
     assert_eq!(compatible[0].level(), Level::Warn);
 }
 
@@ -223,8 +244,12 @@ struct LookupFailsOn(&'static str);
 
 impl Rule for LookupFailsOn {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata =
-            RuleMetadata::new("LookupFailsOn", LintGroup::Correctness, "Test rule.", None);
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "LookupFailsOn",
+            group: LintGroup::Correctness,
+            rationale: "Test rule.",
+            source: None,
+        };
         &METADATA
     }
 }

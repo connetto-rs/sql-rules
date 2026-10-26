@@ -49,12 +49,12 @@ impl<DB: DatabaseLike + 'static> From<UniqueUniqueIndex<DB>> for GenericConstrai
 
 impl<DB> Rule for UniqueUniqueIndex<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "UniqueUniqueIndex",
-            LintGroup::Complexity,
-            "A duplicated unique index enforces nothing more and is maintained again on every write.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "UniqueUniqueIndex",
+            group: LintGroup::Complexity,
+            rationale: "A duplicated unique index enforces nothing more and is maintained again on every write.",
+            source: None,
+        };
         &METADATA
     }
 }

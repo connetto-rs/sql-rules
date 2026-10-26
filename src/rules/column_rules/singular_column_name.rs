@@ -70,12 +70,12 @@ impl<DB: DatabaseLike + 'static> From<SingularColumnName<DB>> for GenericConstra
 
 impl<DB> Rule for SingularColumnName<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "SingularColumnName",
-            LintGroup::Style,
-            "One naming convention keeps queries predictable, and this crate names a column after the single value it holds.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "SingularColumnName",
+            group: LintGroup::Style,
+            rationale: "One naming convention keeps queries predictable, and this crate names a column after the single value it holds.",
+            source: None,
+        };
         &METADATA
     }
 }

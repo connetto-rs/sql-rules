@@ -56,12 +56,12 @@ impl<DB: DatabaseLike + 'static> From<PoliciesRequireRowLevelSecurity<DB>>
 
 impl<DB> Rule for PoliciesRequireRowLevelSecurity<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "PoliciesRequireRowLevelSecurity",
-            LintGroup::Correctness,
-            "PostgreSQL applies no policy until row-level security is enabled on the table, so the policies restrict nothing.",
-            Some("https://www.postgresql.org/docs/current/sql-createpolicy.html"),
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "PoliciesRequireRowLevelSecurity",
+            group: LintGroup::Correctness,
+            rationale: "PostgreSQL applies no policy until row-level security is enabled on the table, so the policies restrict nothing.",
+            source: Some("https://www.postgresql.org/docs/current/sql-createpolicy.html"),
+        };
         &METADATA
     }
 }

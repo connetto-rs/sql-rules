@@ -66,12 +66,12 @@ impl<DB: DatabaseLike + 'static> From<UniqueForeignKey<DB>> for GenericConstrain
 
 impl<DB> Rule for UniqueForeignKey<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "UniqueForeignKey",
-            LintGroup::Complexity,
-            "A duplicated foreign key enforces nothing more and is checked again on every write.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "UniqueForeignKey",
+            group: LintGroup::Complexity,
+            rationale: "A duplicated foreign key enforces nothing more and is checked again on every write.",
+            source: None,
+        };
         &METADATA
     }
 }

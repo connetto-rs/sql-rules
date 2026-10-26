@@ -62,14 +62,14 @@ impl<DB: DatabaseLike + 'static> From<SnakeCaseColumnName<DB>> for GenericConstr
 
 impl<DB> Rule for SnakeCaseColumnName<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "SnakeCaseColumnName",
-            LintGroup::Style,
-            "Snake case keeps multi-word names readable after PostgreSQL folds unquoted identifiers to lower case.",
-            Some(
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "SnakeCaseColumnName",
+            group: LintGroup::Style,
+            rationale: "Snake case keeps multi-word names readable after PostgreSQL folds unquoted identifiers to lower case.",
+            source: Some(
                 "https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS",
             ),
-        );
+        };
         &METADATA
     }
 }

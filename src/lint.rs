@@ -110,52 +110,14 @@ impl Display for Level {
 /// Identity, group and explanation shared by every violation of a rule.
 #[derive(Debug)]
 pub struct RuleMetadata {
-    name: &'static str,
-    group: LintGroup,
-    rationale: &'static str,
-    source: Option<&'static str>,
-}
-
-impl RuleMetadata {
-    /// Creates the metadata of a rule.
-    #[must_use]
-    pub const fn new(
-        name: &'static str,
-        group: LintGroup,
-        rationale: &'static str,
-        source: Option<&'static str>,
-    ) -> Self {
-        Self {
-            name,
-            group,
-            rationale,
-            source,
-        }
-    }
-
-    /// Returns the rule's type name, which is its stable configuration key.
-    #[must_use]
-    pub const fn name(&self) -> &'static str {
-        self.name
-    }
-
-    /// Returns the rule's group.
-    #[must_use]
-    pub const fn group(&self) -> LintGroup {
-        self.group
-    }
-
-    /// Returns why the flagged shape is bad.
-    #[must_use]
-    pub const fn rationale(&self) -> &'static str {
-        self.rationale
-    }
-
-    /// Returns the URL of a source documenting the problem, when one exists.
-    #[must_use]
-    pub const fn source(&self) -> Option<&'static str> {
-        self.source
-    }
+    /// The rule's type name, which is its stable configuration key.
+    pub name: &'static str,
+    /// The rule's group.
+    pub group: LintGroup,
+    /// Why the flagged shape is bad.
+    pub rationale: &'static str,
+    /// URL of a source documenting the problem, when one exists.
+    pub source: Option<&'static str>,
 }
 
 /// A rule with lint metadata.

@@ -137,12 +137,12 @@ impl<DB: DatabaseLike + 'static> From<CompatibleForeignKey<DB>> for GenericConst
 
 impl<C> Rule for CompatibleForeignKey<C> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "CompatibleForeignKey",
-            LintGroup::Suspicious,
-            "A foreign key whose columns differ in type from the referenced columns, or that links tables outside one extension hierarchy, usually points at the wrong column.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "CompatibleForeignKey",
+            group: LintGroup::Suspicious,
+            rationale: "A foreign key whose columns differ in type from the referenced columns, or that links tables outside one extension hierarchy, usually points at the wrong column.",
+            source: None,
+        };
         &METADATA
     }
 }

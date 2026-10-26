@@ -78,12 +78,12 @@ impl<DB: DatabaseLike + 'static> From<PluralTableName<DB>> for GenericConstraine
 
 impl<DB> Rule for PluralTableName<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "PluralTableName",
-            LintGroup::Style,
-            "One naming convention keeps queries predictable, and this crate names a table after the collection of rows it holds.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "PluralTableName",
+            group: LintGroup::Style,
+            rationale: "One naming convention keeps queries predictable, and this crate names a table after the collection of rows it holds.",
+            source: None,
+        };
         &METADATA
     }
 }

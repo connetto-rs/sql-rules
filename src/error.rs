@@ -72,14 +72,14 @@ impl<DB: DatabaseLike> Display for Violation<DB> {
             formatter,
             "{} [{}::{}] {}: {}\n  why: {}\n  fix: {}",
             self.level,
-            self.rule.group(),
-            self.rule.name(),
+            self.rule.group,
+            self.rule.name,
             self.object,
             self.message,
-            self.rule.rationale(),
+            self.rule.rationale,
             self.resolution,
         )?;
-        if let Some(source) = self.rule.source() {
+        if let Some(source) = self.rule.source {
             write!(formatter, "\n  source: {source}")?;
         }
         Ok(())

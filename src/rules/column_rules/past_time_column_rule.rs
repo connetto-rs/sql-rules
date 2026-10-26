@@ -49,12 +49,12 @@ impl<DB: DatabaseLike + 'static> From<PastTimeColumnRule<DB>> for GenericConstra
 
 impl<DB> Rule for PastTimeColumnRule<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "PastTimeColumnRule",
-            LintGroup::Pedantic,
-            "A timestamp recording when something happened cannot lie in the future.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "PastTimeColumnRule",
+            group: LintGroup::Pedantic,
+            rationale: "A timestamp recording when something happened cannot lie in the future.",
+            source: None,
+        };
         &METADATA
     }
 }

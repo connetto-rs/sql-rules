@@ -119,12 +119,12 @@ impl<DB: DatabaseLike + 'static> From<NoForbiddenColumnInExtension<DB>> for Gene
 
 impl<DB> Rule for NoForbiddenColumnInExtension<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NoForbiddenColumnInExtension",
-            LintGroup::Suspicious,
-            "The extension model keeps the configured column name for its own use, so a column with that name on an extending table collides with it.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoForbiddenColumnInExtension",
+            group: LintGroup::Suspicious,
+            rationale: "The extension model keeps the configured column name for its own use, so a column with that name on an extending table collides with it.",
+            source: None,
+        };
         &METADATA
     }
 }

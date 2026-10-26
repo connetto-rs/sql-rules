@@ -28,9 +28,9 @@ impl Levels {
     fn resolve(&self, metadata: &RuleMetadata, floor: Level) -> Level {
         self.rules
             .iter()
-            .find_map(|(name, level)| (name == metadata.name()).then_some(*level))
-            .or(self.groups[metadata.group().index()])
-            .unwrap_or_else(|| metadata.group().default_level().max(floor))
+            .find_map(|(name, level)| (name == metadata.name).then_some(*level))
+            .or(self.groups[metadata.group.index()])
+            .unwrap_or_else(|| metadata.group.default_level().max(floor))
     }
 
     fn refresh<R: Rule + ?Sized>(&self, registered: &mut [Registered<R>]) {

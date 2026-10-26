@@ -72,12 +72,12 @@ impl<DB: DatabaseLike + 'static> From<NoNegationCheckRule<DB>> for GenericConstr
 
 impl<DB> Rule for NoNegationCheckRule<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NoNegationCheckRule",
-            LintGroup::Correctness,
-            "A check that no row can satisfy makes every insert and update of the table fail.",
-            Some("https://www.postgresql.org/docs/current/sql-createtable.html"),
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoNegationCheckRule",
+            group: LintGroup::Correctness,
+            rationale: "A check that no row can satisfy makes every insert and update of the table fail.",
+            source: Some("https://www.postgresql.org/docs/current/sql-createtable.html"),
+        };
         &METADATA
     }
 }

@@ -59,12 +59,12 @@ impl<DB: DatabaseLike + 'static> From<NonCompositePrimaryKeyNamedId<DB>>
 
 impl<DB> Rule for NonCompositePrimaryKeyNamedId<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NonCompositePrimaryKeyNamedId",
-            LintGroup::Style,
-            "Naming every single-column primary key `id` lets references and generated code find it without a lookup.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NonCompositePrimaryKeyNamedId",
+            group: LintGroup::Style,
+            rationale: "Naming every single-column primary key `id` lets references and generated code find it without a lookup.",
+            source: None,
+        };
         &METADATA
     }
 }

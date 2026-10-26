@@ -121,12 +121,12 @@ impl<DB: DatabaseLike + 'static> From<UniqueColumnNamesInExtensionGraph<DB>>
 
 impl<DB> Rule for UniqueColumnNamesInExtensionGraph<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "UniqueColumnNamesInExtensionGraph",
-            LintGroup::Suspicious,
-            "A column name repeated across an extension hierarchy makes the merged row ambiguous.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "UniqueColumnNamesInExtensionGraph",
+            group: LintGroup::Suspicious,
+            rationale: "A column name repeated across an extension hierarchy makes the merged row ambiguous.",
+            source: None,
+        };
         &METADATA
     }
 }

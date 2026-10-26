@@ -82,12 +82,12 @@ impl<DB: DatabaseLike + 'static> From<NoSurrogatePrimaryKeyInExtension<DB>>
 
 impl<DB> Rule for NoSurrogatePrimaryKeyInExtension<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NoSurrogatePrimaryKeyInExtension",
-            LintGroup::Correctness,
-            "An extension row shares its parent's primary key, so a generated or defaulted key cannot hold the parent's value.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoSurrogatePrimaryKeyInExtension",
+            group: LintGroup::Correctness,
+            rationale: "An extension row shares its parent's primary key, so a generated or defaulted key cannot hold the parent's value.",
+            source: None,
+        };
         &METADATA
     }
 }

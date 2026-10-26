@@ -60,6 +60,21 @@ use crate::{
 /// .unwrap();
 /// assert!(constrainer.validate_schema(&invalid_redundant).is_err());
 ///
+/// // The redundant extension is found whichever foreign key comes first
+/// let invalid_reversed = ParserDB::parse::<GenericDialect>(
+///     "
+/// CREATE TABLE table_c (id INT PRIMARY KEY);
+/// CREATE TABLE table_b (id INT PRIMARY KEY REFERENCES table_c(id));
+/// CREATE TABLE table_a (
+///     id INT PRIMARY KEY,
+///     FOREIGN KEY (id) REFERENCES table_c(id),
+///     FOREIGN KEY (id) REFERENCES table_b(id)
+/// );
+/// ",
+/// )
+/// .unwrap();
+/// assert!(constrainer.validate_schema(&invalid_reversed).is_err());
+///
 /// // Valid: Non-redundant DAG (A -> B -> C and A -> D -> C)
 /// // table_a's id references both table_b and table_d, which independently extend table_c
 /// let valid_dag = ParserDB::parse::<GenericDialect>(
@@ -95,12 +110,12 @@ impl<DB: DatabaseLike + 'static> From<NonRedundantExtensionDag<DB>> for GenericC
 
 impl<DB> Rule for NonRedundantExtensionDag<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NonRedundantExtensionDag",
-            LintGroup::Complexity,
-            "A redundant extension edge repeats what the hierarchy already implies, so it adds a dependency the schema does not need.",
-            None,
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NonRedundantExtensionDag",
+            group: LintGroup::Complexity,
+            rationale: "A redundant extension edge repeats what the hierarchy already implies, so it adds a dependency the schema does not need.",
+            source: None,
+        };
         &METADATA
     }
 }
@@ -134,30 +149,27 @@ impl<DB: DatabaseLike> TableRule for NonRedundantExtensionDag<DB> {
                             "Remove the duplicate foreign key that makes table '{table_name}' extend '{duplicated}'."
                         ),
                     )?;
-                } else if second.is_descendant_of(database, first)? {
-                    let redundant = first.table_name();
-                    let witness = second.table_name();
-                    reporter.table(
-                        table,
-                        format!(
-                            "Table '{table_name}' extends '{redundant}' directly, but its extension of '{witness}' already implies it."
-                        ),
-                        format!(
-                            "Remove the foreign key from table '{table_name}' that extends '{redundant}'."
-                        ),
-                    )?;
-                } else if first.is_descendant_of(database, second)? {
-                    let redundant = second.table_name();
-                    let witness = first.table_name();
-                    reporter.table(
-                        table,
-                        format!(
-                            "Table '{table_name}' extends '{redundant}' directly, but its extension of '{witness}' already implies it."
-                        ),
-                        format!(
-                            "Remove the foreign key from table '{table_name}' that extends '{redundant}'."
-                        ),
-                    )?;
+                } else {
+                    let implied = if second.is_descendant_of(database, first)? {
+                        Some((first, second))
+                    } else if first.is_descendant_of(database, second)? {
+                        Some((second, first))
+                    } else {
+                        None
+                    };
+                    if let Some((redundant, witness)) = implied {
+                        let redundant = redundant.table_name();
+                        let witness = witness.table_name();
+                        reporter.table(
+                            table,
+                            format!(
+                                "Table '{table_name}' extends '{redundant}' directly, but its extension of '{witness}' already implies it."
+                            ),
+                            format!(
+                                "Remove the foreign key from table '{table_name}' that extends '{redundant}'."
+                            ),
+                        )?;
+                    }
                 }
             }
         }

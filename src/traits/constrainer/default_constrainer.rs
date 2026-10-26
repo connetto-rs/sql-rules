@@ -35,7 +35,7 @@ use crate::{
 /// let mut constrainer = DefaultConstrainer::<ParserDB>::default();
 /// let raised_by = |constrainer: &DefaultConstrainer<ParserDB>, rule: &str| {
 ///     constrainer.diagnostics(&database).iter().any(|error| {
-///         matches!(error, Error::Violation(violation) if violation.rule().name() == rule)
+///         matches!(error, Error::Violation(violation) if violation.rule().name == rule)
 ///     })
 /// };
 /// assert!(!raised_by(&constrainer, "NoRustKeywordColumnName"));

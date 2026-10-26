@@ -107,12 +107,14 @@ impl<DB: DatabaseLike + 'static> From<ExtensionForeignKeyOnDeleteCascade<DB>>
 
 impl<C> Rule for ExtensionForeignKeyOnDeleteCascade<C> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "ExtensionForeignKeyOnDeleteCascade",
-            LintGroup::Suspicious,
-            "PostgreSQL's default `NO ACTION` refuses to delete a parent row while extension rows reference it, so extension rows have to follow their parent with `ON DELETE CASCADE`.",
-            Some("https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK"),
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "ExtensionForeignKeyOnDeleteCascade",
+            group: LintGroup::Suspicious,
+            rationale: "PostgreSQL's default `NO ACTION` refuses to delete a parent row while extension rows reference it, so extension rows have to follow their parent with `ON DELETE CASCADE`.",
+            source: Some(
+                "https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK",
+            ),
+        };
         &METADATA
     }
 }

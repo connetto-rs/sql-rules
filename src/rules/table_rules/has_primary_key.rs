@@ -47,14 +47,14 @@ impl<DB: DatabaseLike + 'static> From<HasPrimaryKey<DB>> for GenericConstrainer<
 
 impl<DB> Rule for HasPrimaryKey<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "HasPrimaryKey",
-            LintGroup::Suspicious,
-            "A table without a primary key has no declared row identity, so other tables cannot reference its rows and clients cannot address one row.",
-            Some(
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "HasPrimaryKey",
+            group: LintGroup::Suspicious,
+            rationale: "A table without a primary key has no declared row identity, so other tables cannot reference its rows and clients cannot address one row.",
+            source: Some(
                 "https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-PRIMARY-KEYS",
             ),
-        );
+        };
         &METADATA
     }
 }

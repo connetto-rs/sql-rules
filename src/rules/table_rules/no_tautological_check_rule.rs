@@ -72,12 +72,12 @@ impl<DB: DatabaseLike + 'static> From<NoTautologicalCheckRule<DB>> for GenericCo
 
 impl<DB> Rule for NoTautologicalCheckRule<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "NoTautologicalCheckRule",
-            LintGroup::Correctness,
-            "A check that every row satisfies constrains nothing, so the condition it was meant to enforce is missing.",
-            Some("https://www.postgresql.org/docs/current/sql-createtable.html"),
-        );
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "NoTautologicalCheckRule",
+            group: LintGroup::Correctness,
+            rationale: "A check that every row satisfies constrains nothing, so the condition it was meant to enforce is missing.",
+            source: Some("https://www.postgresql.org/docs/current/sql-createtable.html"),
+        };
         &METADATA
     }
 }

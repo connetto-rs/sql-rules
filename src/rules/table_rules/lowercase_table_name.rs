@@ -46,14 +46,14 @@ impl<DB: DatabaseLike + 'static> From<LowercaseTableName<DB>> for GenericConstra
 
 impl<DB> Rule for LowercaseTableName<DB> {
     fn metadata(&self) -> &'static RuleMetadata {
-        static METADATA: RuleMetadata = RuleMetadata::new(
-            "LowercaseTableName",
-            LintGroup::Style,
-            "PostgreSQL folds unquoted identifiers to lower case, so a mixed-case name has to be quoted in every query.",
-            Some(
+        static METADATA: RuleMetadata = RuleMetadata {
+            name: "LowercaseTableName",
+            group: LintGroup::Style,
+            rationale: "PostgreSQL folds unquoted identifiers to lower case, so a mixed-case name has to be quoted in every query.",
+            source: Some(
                 "https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS",
             ),
-        );
+        };
         &METADATA
     }
 }
