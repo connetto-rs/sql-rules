@@ -317,9 +317,22 @@ fn the_default_constrainer_runs_the_grant_rules_at_their_group_levels() {
             .iter()
             .map(|inactive| inactive.rule().name)
             .collect::<Vec<_>>(),
-        ["TruncateGrantedToAppRole"]
+        [
+            "TruncateGrantedToAppRole",
+            "RoleKeyedPolicyWhenPooled",
+            "ClientRoleBypassesRowLevelSecurity",
+            "SettableMembershipInBypassingRole",
+        ]
     );
     constrainer.set_deployment(supabase());
+    assert_eq!(
+        constrainer
+            .inactive_rules()
+            .iter()
+            .map(|inactive| inactive.rule().name)
+            .collect::<Vec<_>>(),
+        ["RoleKeyedPolicyWhenPooled"]
+    );
     let database = parse(&format!(
         "{ROLES}{PROTECTED}
          CREATE TABLE open_data (id INT PRIMARY KEY);
