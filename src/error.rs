@@ -163,7 +163,7 @@ impl Display for InactiveRule {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "{} does not run because the deployment declares no {}",
+            "{} does not run because the deployment does not declare {}",
             self.rule.name, self.missing
         )
     }
