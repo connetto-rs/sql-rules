@@ -176,7 +176,7 @@ dependencies = [
 [[package]]
 name = "geometric-traits"
 version = "0.2.3"
-source = "git+https://github.com/earth-metabolome-initiative/geometric-traits?branch=main#18dbbe0862f478098f8728da43d7efa1e6e327bf"
+source = "git+https://github.com/earth-metabolome-initiative/geometric-traits?branch=main#72c9e5f6fcc40127549813725c1849c5ddf4cf86"
 dependencies = [
  "barnes-hut-tree",
  "hashbrown",
@@ -441,7 +441,7 @@ dependencies = [
 [[package]]
 name = "sql-traits"
 version = "0.1.0"
-source = "git+https://github.com/connetto-rs/sql-traits?branch=main#b33297fabd33552831b04270cfc01be398ca38e8"
+source = "git+https://github.com/connetto-rs/sql-traits?branch=main#66f17acc2199c32b0190f7f4989cf06a3863a8ed"
 dependencies = [
  "geometric-traits",
  "sha2",
@@ -453,7 +453,7 @@ dependencies = [
 [[package]]
 name = "sqlparser"
 version = "0.63.0"
-source = "git+https://github.com/apache/datafusion-sqlparser-rs?branch=main#b22bf61b00917842b2f3d2363d4baab87123edb3"
+source = "git+https://github.com/apache/datafusion-sqlparser-rs?branch=main#50813ee84710b1914654205d2f178c533a61799a"
 dependencies = [
  "log",
  "recursive",
@@ -463,7 +463,7 @@ dependencies = [
 [[package]]
 name = "sqlparser_derive"
 version = "0.6.0"
-source = "git+https://github.com/apache/datafusion-sqlparser-rs?branch=main#b22bf61b00917842b2f3d2363d4baab87123edb3"
+source = "git+https://github.com/apache/datafusion-sqlparser-rs?branch=main#50813ee84710b1914654205d2f178c533a61799a"
 dependencies = [
  "proc-macro2",
  "quote",
