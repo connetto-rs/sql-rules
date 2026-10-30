@@ -2,49 +2,10 @@
 //! policies that get around row-level security, observed through the public
 //! constrainer API.
 
+mod common;
+
+use common::{finding, findings, parse, supabase};
 use sql_rules::prelude::*;
-use sqlparser::dialect::PostgreSqlDialect;
-
-fn parse(sql: &str) -> ParserDB {
-    ParserDB::parse::<PostgreSqlDialect>(sql).expect("schema parses")
-}
-
-fn supabase() -> Deployment {
-    Deployment::default()
-        .with_anonymous_role("anon")
-        .with_app_role("authenticated")
-}
-
-const ROLES: &str = "
-    CREATE ROLE anon;
-    CREATE ROLE authenticated;
-    CREATE ROLE reporting;";
-
-/// Rule name, level and object of every violation, failing on anything else.
-fn findings(
-    constrainer: impl Into<GenericConstrainer<ParserDB>>,
-    deployment: Deployment,
-    sql: &str,
-) -> Vec<(String, Level, String)> {
-    let mut constrainer = constrainer.into();
-    constrainer.set_deployment(deployment);
-    constrainer
-        .diagnostics(&parse(&format!("{ROLES}{sql}")))
-        .into_iter()
-        .map(|error| match error {
-            Error::Violation(violation) => (
-                violation.rule().name.to_owned(),
-                violation.level(),
-                violation.object().to_owned(),
-            ),
-            other => panic!("unexpected failure: {other}"),
-        })
-        .collect()
-}
-
-fn finding(rule: &str, level: Level, object: &str) -> (String, Level, String) {
-    (rule.to_owned(), level, object.to_owned())
-}
 
 const DOCS: &str = "
     CREATE TABLE docs (id INT PRIMARY KEY, owner TEXT);
