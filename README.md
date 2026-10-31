@@ -41,6 +41,7 @@ A rule registered on its own, including a single rule converted with `.into()`, 
 | :--- | :--- | :--- |
 | `correctness` | `deny` | `PoliciesRequireRowLevelSecurity`, `PolicyReadCycle`, `DeadPermissivePolicy`, `NoTautologicalCheckRule`, `NoNegationCheckRule`, `NoSurrogatePrimaryKeyInExtension` |
 | `suspicious` | `warn` | `LatentPolicyReadCycle`, `TautologicalWithCheck`, `UnforcedRowLevelSecurity`, `TextualColumnRule`, `CompatibleForeignKey`, `HasPrimaryKey`, `ExtensionForeignKeyOnDeleteCascade`, `NoForbiddenColumnInExtension`, `UniqueColumnNamesInExtensionGraph` |
+| `perf` | `warn` | `CorrelatedPolicySubquery` |
 | `complexity` | `warn` | `UniqueForeignKey`, `UniqueCheckRule`, `UniqueUniqueIndex`, `NonRedundantExtensionDag` |
 | `style` | `warn` | `LowercaseTableName`, `LowercaseColumnName`, `LowercaseForeignKeyName`, `SnakeCaseTableName`, `SnakeCaseColumnName`, `PluralTableName`, `SingularColumnName`, `PrimaryKeyReferenceEndsWithId`, `NonCompositePrimaryKeyNamedId` |
 | `pedantic` | `allow` | `PastTimeColumnRule`, `NonEmptyTextualColumnRule` |
