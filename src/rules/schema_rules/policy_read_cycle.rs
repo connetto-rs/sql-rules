@@ -5,7 +5,7 @@ use std::{collections::BTreeSet, ops::ControlFlow};
 
 use sql_traits::{
     errors::LookupError,
-    traits::{DataStatementLike, DatabaseLike, PolicyLike, RoleLike, TableLike},
+    traits::{DataStatementLike, DatabaseLike, PolicyLike, Relation, RoleLike, TableLike},
 };
 use sqlparser::ast::{CreatePolicyCommand, Expr, Query, Visit, Visitor};
 
@@ -45,11 +45,15 @@ impl<DB: DatabaseLike> Visitor for SublinkReads<'_, DB> {
             return ControlFlow::Continue(());
         }
         self.found = true;
-        let tables = match DataStatementLike::<DB>::referenced_tables(query, self.database) {
-            Ok(tables) => tables,
+        let relations = match DataStatementLike::<DB>::referenced_relations(query, self.database) {
+            Ok(relations) => relations,
             Err(error) => return ControlFlow::Break(error),
         };
-        for table in tables {
+        // A view reads its base tables with its owner's rights, which may bypass their policies.
+        for relation in relations {
+            let Relation::Table(table) = relation else {
+                continue;
+            };
             if !self.reads.iter().any(|read| read.table == table) {
                 self.reads.push(Read {
                     table,

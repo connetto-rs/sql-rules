@@ -186,6 +186,20 @@ fn a_table_without_row_level_security_breaks_the_cycle() {
 }
 
 #[test]
+fn a_read_through_a_view_whose_owner_may_bypass_the_table_closes_no_denied_cycle() {
+    let database = parse(
+        "CREATE TABLE a (id INT, team INT);
+         CREATE TABLE b (id INT, team INT);
+         ALTER TABLE a ENABLE ROW LEVEL SECURITY;
+         ALTER TABLE b ENABLE ROW LEVEL SECURITY;
+         CREATE VIEW bv AS SELECT team FROM b;
+         CREATE POLICY pb ON b USING (EXISTS (SELECT 1 FROM a WHERE a.team = b.team));
+         CREATE POLICY pa ON a USING (EXISTS (SELECT 1 FROM bv WHERE bv.team = a.team));",
+    );
+    assert_eq!(cycles(&cycle_rules(), &database), []);
+}
+
+#[test]
 fn a_common_table_expression_shadowing_the_table_is_not_a_read() {
     for read in [
         "WITH memberships AS (SELECT 1 AS owner_id) SELECT owner_id FROM memberships",
